@@ -1,4 +1,4 @@
-import {HILLS,clamp,ground,flightTime,distanceWorld} from './core.mjs';
+import {HILLS,clamp,ground,flightTime,distanceWorld,challengeFor} from './core.mjs';
 import {AlpineAthlete} from './athlete.mjs';
 const T=window.THREE;
 const V=(x,y,z)=>new T.Vector3(x,y,z);
@@ -101,6 +101,10 @@ export class AlpineView{
   this.strip(p,-3.4,3.4,-2.08,-.88,0x5bd9ae,.042);
   this.strip(p,-3.43,3.43,-.32,-.04,0x1c6080,.043);
   this.marker=this.strip(p,-3.35,3.35,26,28,0x67eab7,.048);
+  this.targetMarker=this.strip(p,-3.35,3.35,28,36,0xeab155,.045);
+  this.targetMarker.frustumCulled=false;
+  this.targetMarker.visible=false;
+  this.markerBand=null;
   this.strip(p,-4.05,4.05,-38,-36,h.snow,.001);
   this.box(p,0,ground(-34.1)-.62,-36,9,1,3.8,0x2c506a);
   this.box(p,0,ground(-36)+3.65,-36,8.9,.23,.28,0x13364e);
@@ -153,8 +157,8 @@ export class AlpineView{
  }
  render(run,kit,mode,fx,reduced,dt=1/60){
   if(run.hill!==this.id)this.make(run.hill);
-  let r=run, z=r.z, x=r.x, fly=r.phase==='flight', u=fly?clamp(r.t/flightTime(r)):0, intro=mode==='home'||mode==='hills'||mode==='kits'||r.phase==='ready';
-  let close=mode==='home'||mode==='hills'||mode==='kits';
+  let r=run, z=r.z, x=r.x, fly=r.phase==='flight', u=fly?clamp(r.t/flightTime(r)):0;
+  const close=mode!=='race', intro=close||r.phase==='ready';
   if(intro){z=close?-27:-35;x=0}
   const g=ground(z),slope=Math.atan2(ground(z+.85)-ground(z-.85),1.70);
   const air=fly?Math.sin(u*Math.PI)*(2.55+1.05*r.take):0;
@@ -168,7 +172,18 @@ export class AlpineView{
   this.shad.rotation.x=-slope;
   this.shad.scale.set(.46+air*.10,1,1.15+air*.18);
   this.shad.material.opacity=1/(1+air*.54);
-  this.marker.visible=fly||r.phase==='brake';let a=distanceWorld(r)-1.7;const pos=this.marker.geometry.attributes.position;for(let i=0;i<pos.count;i++){let nz=a+Math.floor(i/2)*2/3;pos.setY(i,ground(nz)+.049);pos.setZ(i,nz)}pos.needsUpdate=true;this.marker.frustumCulled=false;
+  const band=challengeFor(r)?.band;
+  const showMark=!close&&(fly||r.phase==='brake');
+  this.marker.visible=showMark&&!band;
+  if(this.marker.visible){
+   const end=distanceWorld(r)+.30;
+   this.moveMarker(this.marker,end-2,end,.049);
+  }
+  this.targetMarker.visible=showMark&&Boolean(band);
+  if(this.targetMarker.visible&&this.markerBand!==band){
+   this.moveMarker(this.targetMarker,(band[0]-.5)/2.36,(band[1]+.5)/2.36,.045);
+   this.markerBand=band;
+  }
   this.drawSnow(r,fx,reduced);
   this.flags.forEach((flag,i)=>{
    flag.rotation.y=.14*HILLS[r.hill].wind+(reduced?0:Math.sin(r.t*5+i*.83)*.20);
@@ -179,6 +194,17 @@ export class AlpineView{
   if(!this.lastPhase||reduced||this.lastPhase==='result'&&r.phase==='ready'||intro&&this.lastPhase!=='ready'){this.cam.copy(ca);this.look.copy(look)}else{this.cam.lerp(ca,.12);this.look.lerp(look,.15)}
   if(Math.abs(this.cam.x)<4.1)this.cam.y=Math.max(this.cam.y,ground(this.cam.z)+1.15);
   this.lastPhase=r.phase;this.c.position.copy(this.cam);this.c.lookAt(this.look);this.r.render(this.s,this.c);
+ }
+
+ moveMarker(mesh,start,end,lift){
+  const points=mesh.geometry.attributes.position;
+  for(let i=0;i<points.count;i++){
+   const z=mix(start,end,Math.floor(i/2)/(points.count/2-1));
+   points.setY(i,ground(z)+lift);
+   points.setZ(i,z);
+  }
+  points.needsUpdate=true;
+  mesh.frustumCulled=false;
  }
 
  drawSnow(run,fx,reduced){

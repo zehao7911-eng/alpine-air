@@ -4,3 +4,5 @@
 @media(max-width:350px),(max-height:650px){.panel{padding:12px}.panel p{margin:6px 0 9px}.panel h1,.panel h2{font-size:30px}.primary,.secondary,.choice{min-height:44px}#tap{width:72px;height:72px}.coach{padding:8px}.coach b{margin:3px 0 6px}}@media(orientation:landscape) and (max-height:540px){.rotate{display:grid;place-content:center;text-align:center;position:absolute;inset:0;z-index:6;background:#132944;font-size:38px}}
 header .meet{min-width:0;overflow:hidden;text-overflow:ellipsis}
 @media(max-width:360px){header{gap:6px}.brand{font-size:14px;gap:4px}.brand svg{width:28px}.meet{font-size:9px;letter-spacing:.055em;padding:7px 6px}}
+.rating{color:#ffdf8d;font-size:21px;letter-spacing:.1em;line-height:1.25}
+.track #zone.gold{background:#ffd77e}

@@ -1,23 +1,67 @@
 import {HILLS,clamp,ground,profile,newRun,restoreRun,snapshotRun,targetTake,flightTime,targetLand,distanceWorld,action,tick,nextAttempt,total,settle} from './core.mjs';
+import {CHALLENGES,challengeFor,jumpLimit,available,takeoffBand,challengeResult,recordActivity} from './core.mjs';
 import {AlpineView} from './view.mjs';
 import {AlpineHost} from './sdk.mjs';
 const $=id=>document.getElementById(id),key='alpine-air-v1';
 const reduced=matchMedia('(prefers-reduced-motion: reduce)');
 let data;try{data=JSON.parse(localStorage.getItem(key)||'null')}catch{}
 const valid=v=>v?.game==='alpine-air'&&v.v===1&&v.profile&&typeof v.profile==='object';
-let pf=profile(valid(data)?data.profile:undefined), run=restoreRun(valid(data)?data.run:null,pf)||newRun(),mode='home',paused=false,changed=false,support={},fx=null,noticeUntil=0,last=0,ctx=null,view;
+let pf=profile(valid(data)?data.profile:undefined);
+let circuit=restoreRun(valid(data)?data.run:null,pf)||newRun();
+let side=restoreRun(valid(data)?data.side:null,pf);
+let run=data?.selected==='side'&&side?side:circuit;
+let mode='home',paused=false,changed=false,support={},fx=null,noticeUntil=0,last=0,ctx=null,view;
 const host=new AlpineHost(window,{
  status(v){support=v;if(mode==='kits')panel()},
  reward(kit){if(pf[kit])return;pf[kit]=true;save();notice(kit==='aurora'?'Aurora suit unlocked':'Ember suit unlocked');tone([490,650,800]);if(mode==='kits')panel()},
- load(v){if(!valid(v))return;let cloud=profile(v.profile);if(!changed&&!valid(data)){pf=cloud;run=restoreRun(v.run,pf)||newRun();try{localStorage.setItem(key,JSON.stringify(payload()))}catch{}}else{pf.unlocked=Math.max(pf.unlocked,cloud.unlocked);pf.best=pf.best.map((n,i)=>Math.max(n,cloud.best[i]));pf.aurora||=cloud.aurora;pf.ember||=cloud.ember;save()}if(!active()||paused)panel()}
+ load(v){
+  if(!valid(v))return;
+  const cloud=profile(v.profile);
+  if(!changed&&!valid(data)){
+   pf=cloud;
+   circuit=restoreRun(v.run,pf)||newRun();
+   side=restoreRun(v.side,pf);
+   run=v.selected==='side'&&side?side:circuit;
+   try{localStorage.setItem(key,JSON.stringify(payload()))}catch{}
+  }else{
+   pf.unlocked=Math.max(pf.unlocked,cloud.unlocked);
+   pf.best=pf.best.map((n,i)=>Math.max(n,cloud.best[i]));
+   pf.practice=pf.practice.map((n,i)=>Math.max(n,cloud.practice[i]));
+   for(const {id} of CHALLENGES)pf.medals[id]=Math.max(pf.medals[id],cloud.medals[id]);
+   pf.aurora||=cloud.aurora;
+   pf.ember||=cloud.ember;
+   save();
+  }
+  if(!active()||paused)panel();
+ }
 });
-function payload(){return {game:'alpine-air',v:1,profile:pf,run:snapshotRun(run)}}
+function payload(){return {game:'alpine-air',v:1,profile:pf,run:snapshotRun(circuit),side:snapshotRun(side),selected:run===side?'side':'circuit'}}
+function selectRun(next){run=next;if(next.activity==='circuit')circuit=next;else side=next;mode='race';fx=null;save()}
 function save(){changed=true;let p=payload();try{localStorage.setItem(key,JSON.stringify(p))}catch{}host.save(p)}
 function tone(notes,type='sine'){if(!pf.sound)return;try{ctx??=new (window.AudioContext||window.webkitAudioContext)();if(ctx.state==='suspended')ctx.resume().catch(()=>{});const at=ctx.currentTime;notes.forEach((freq,i)=>{const t=at+i*.073,o=ctx.createOscillator(),g=ctx.createGain();o.type=type;o.frequency.value=freq;g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(.063,t+.025);g.gain.exponentialRampToValueAtTime(.0001,t+.20);o.connect(g);g.connect(ctx.destination);o.start(t);o.stop(t+.205)})}catch{}}
 function notice(s){$('toast').textContent=s;noticeUntil=performance.now()+1050}
 const button=(label,id,cl='primary',tail='→',disabled=false)=>'<button type="button" class="'+cl+'" data-do="'+id+'" '+(disabled?'disabled':'')+'><span>'+label+'</span><span aria-hidden="true">'+tail+'</span></button>';
-const names={blue:'Basin Blue',rose:'Glacier Rose',ice:'Ridge Ice',aurora:'Aurora Violet',ember:'Ember Orange'};
-const owned=k=>k==='blue'||k==='rose'&&pf.unlocked>=1||k==='ice'&&pf.best[2]>=HILLS[2].target||((k==='aurora'||k==='ember')&&pf[k]);
+const names={blue:'Basin Blue',rose:'Glacier Rose',ice:'Ridge Ice',summit:'Summit Green',gold:'Suncrest Gold',aurora:'Aurora Violet',ember:'Ember Orange'};
+const starTotal=()=>Object.values(pf.medals).reduce((sum,stars)=>sum+stars,0);
+const owned=k=>k==='blue'||k==='rose'&&pf.unlocked>=1||k==='ice'&&pf.best[2]>=HILLS[2].target||k==='summit'&&starTotal()>=4||k==='gold'&&starTotal()>=12||((k==='aurora'||k==='ember')&&pf[k]);
+const starsLabel=stars=>'★'.repeat(stars)+'☆'.repeat(3-stars);
+function marks(run){
+ return '<div class="scores">'+run.results.map(jump=>'<div class="score"><strong>'+jump.distance+' m</strong><span>Style '+jump.style.toFixed(1)+'</span><b>'+jump.points.toFixed(1)+' pts</b></div>').join('')+'</div>';
+}
+function activityPanel(){
+ const challenge=challengeFor(run);
+ const name=challenge?.name??'Practice';
+ const label='<small>'+name+' · '+HILLS[run.hill].name+'</small>';
+ if(run.phase==='ready')return label+'<h2>At the gate</h2><p>'+(challenge?.detail??'Train your timing with slower cues. Every jump counts toward your practice best.')+'</p>'+button('Start descent','start');
+ if(run.phase==='between')return label+'<h2>First mark</h2>'+marks(run)+'<p>Match your first jump to stay within '+challenge.gap+' m.</p>'+button('Next jump','second');
+ if(run.phase!=='result')return '';
+ if(!challenge)return label+'<h2>Practice mark</h2>'+marks(run)+'<p>Personal best · '+pf.practice[run.hill]+' m</p>'+button('Jump again','replay')+'<div class="row">'+button('Practice hills','practice','secondary','◭')+button('Home','home','secondary','←')+'</div>';
+ const {stars,reason}=challengeResult(run);
+ const next=CHALLENGES.indexOf(challenge)+1;
+ const advance=stars&&next<CHALLENGES.length;
+ return label+'<h2>'+(stars?'Challenge cleared':'Try again')+'</h2><div class="rating" aria-label="'+stars+' out of 3 stars">'+starsLabel(stars)+'</div>'+marks(run)+'<p>'+reason+'</p>'+
+  (advance?button('Next challenge','challenge-'+next):'')+'<div class="row">'+button('Jump again','replay',advance?'secondary':'primary','↻')+button('Challenge board','challenges','secondary','◈')+'</div>';
+}
 const active=()=>['inrun','flight','brake'].includes(run.phase);
 const wide=matchMedia('(orientation:landscape) and (max-height:540px)');
 function panel(){
@@ -26,13 +70,30 @@ function panel(){
  $('controls').hidden=mode!=='race'||!active()||paused;
  if(!view)return;
  if(paused){html='<small>Alpine circuit</small><h2>Paused</h2>'+button('Resume','resume')+'<div class="row">'+button(pf.sound?'Sound on':'Sound off','sound','secondary','♪')+'</div>'}
- else if(mode==='home'){html='<small>THE ALPINE CIRCUIT</small><h1>Catch the air.</h1><p>Tap to jump at the edge. Tap again just before your skis touch down.</p>'+button(run.phase==='result'?'View results':run.results.length?'Continue meet':'Enter meet','enter')+'<div class="row">'+button('Hills','hills','secondary','◭')+button('Suits','kits','secondary','◇')+'</div>'}
+ else if(mode==='home'){
+  html='<small>THE ALPINE CIRCUIT</small><h1>Catch the air.</h1><p>Tap to jump at the edge. Tap again just before your skis touch down.</p>'+
+   (run===side&&side.phase!=='result'?button('Resume '+(challengeFor(side)?.name??'practice'),'resume-side'):'')+
+   button(circuit.phase==='result'?'View results':circuit.results.length?'Continue meet':'Enter meet','enter',run===side&&side.phase!=='result'?'choice':'primary')+
+   '<div class="row">'+button('Challenges','challenges','secondary','◈')+button('Practice','practice','secondary','↻')+'</div>'+
+   '<div class="row">'+button('Hills','hills','secondary','◭')+button('Suits','kits','secondary','◇')+'</div>';
+ }
+ else if(mode==='challenges'){
+  html='<small>Alpine challenge board</small><h2>Challenges</h2><p>'+starTotal()+' / 18 stars · Clear a challenge to unlock the next.</p>'+
+   CHALLENGES.map((c,i)=>button(c.name,'challenge-'+i,'choice',available(i,pf)?starsLabel(pf.medals[c.id]):'LOCKED',!available(i,pf))).join('')+
+   '<div class="row">'+button('Back','home','secondary','←')+'</div>';
+ }
+ else if(mode==='practice'){
+  html='<small>Open training</small><h2>Practice</h2><p>One jump at a time. Slower timing cues and a personal best for each hill.</p>'+
+   HILLS.map((v,i)=>button(v.name,'practice-'+i,'choice',i>pf.unlocked?'LOCKED':pf.practice[i]?pf.practice[i]+' M':'→',i>pf.unlocked)).join('')+
+   '<div class="row">'+button('Back','home','secondary','←')+'</div>';
+ }
  else if(mode==='hills'){html='<small>Alpine circuit</small><h2>Hills</h2>'+HILLS.map((v,i)=>button(v.name,'hill'+i,'choice',i>pf.unlocked?'LOCKED':pf.best[i]?pf.best[i].toFixed(1)+' PTS':'→',i>pf.unlocked)).join('')+'<div class="row">'+button('Back','home','secondary','←')+'</div>'}
- else if(mode==='kits'){html='<small>Equipment</small><h2>Ski suits</h2>'+Object.keys(names).filter(k=>!['aurora','ember'].includes(k)||support[k]||pf[k]).map(k=>button(names[k],'kit-'+k,'choice',pf.kit===k?'✓':owned(k)?'◇':'LOCKED',!owned(k))).join('');
+ else if(mode==='kits'){html='<small>Equipment</small><h2>Ski suits</h2>'+Object.keys(names).filter(k=>!['aurora','ember'].includes(k)||support[k]||pf[k]).map(k=>button(names[k],'kit-'+k,'choice',pf.kit===k?'✓':owned(k)?'◇':k==='summit'?'4 STARS':k==='gold'?'12 STARS':'LOCKED',!owned(k))).join('');
   if(support.aurora&&!pf.aurora)html+='<p class="reward">Like this game in GameWave to unlock Aurora Violet.</p>';
   if(support.ember&&!pf.ember)html+='<p class="reward">Post a direct comment in GameWave to unlock Ember Orange.</p>';
   html+='<div class="row">'+button('Back','home','secondary','←')+button(pf.sound?'Sound on':'Sound off','sound','secondary','♪')+'</div>';
- }else if(run.phase==='ready'){html='<small>'+h.name+' · Jump '+(run.attempt+1)+' / 2</small><h2>At the gate</h2><p>Tap when the timing bar reaches mint. Two jumps to score '+h.target+' points.</p>'+button('Start descent','start')}
+ }else if(run.activity!=='circuit'){html=activityPanel()}
+ else if(run.phase==='ready'){html='<small>'+h.name+' · Jump '+(run.attempt+1)+' / 2</small><h2>At the gate</h2><p>Tap when the timing bar reaches mint. Two jumps to score '+h.target+' points.</p>'+button('Start descent','start')}
  else if(run.phase==='between'||run.phase==='result'){
   const done=run.phase==='result',win=total(run)>=h.target;
   html='<small>'+h.name+' · '+(done?'Meet results':'Jump 1 of 2')+'</small><h2>'+(done?(win?(run.hill===2?'Circuit champion':'Hill cleared'):'Try another meet'):'First mark')+'</h2>'+(win&&done?'<div class="medal" aria-hidden="true">✦</div>':'')+'<div class="scores">'+run.results.map((v,i)=>'<div class="score"><strong>'+v.distance+' m</strong><span>Style '+v.style.toFixed(1)+'</span><b>'+v.points.toFixed(1)+' pts</b></div>').join('')+'</div><p>'+total(run).toFixed(1)+' / '+h.target+' points'+(done&&win&&run.hill<2?' · '+HILLS[run.hill+1].name+' unlocked':'')+'</p>';
@@ -56,13 +117,21 @@ $('panel').addEventListener('click',ev=>{
  if(id==='resume'){paused=false;panel();return}
  if(id==='sound'){pf.sound=!pf.sound;save();if(pf.sound)tone([500]);panel();return}
  tone([380]);
- if(id==='enter')mode='race';
- else if(id==='home'||id==='hills'||id==='kits')mode=id;
+ if(id==='enter')selectRun(circuit);
+ else if(id==='resume-side'&&side)selectRun(side);
+ else if(['home','hills','kits','challenges','practice'].includes(id))mode=id;
  else if(id==='second'){nextAttempt(run);mode='race';save()}
- else if(id==='replay'||id==='next'||/^hill[0-2]$/.test(id)){
-  const n=id==='next'?run.hill+1:id==='replay'?run.hill:Number(id.slice(4));
+ else if(id.startsWith('challenge-')){
+  const i=Number(id.slice(10)),challenge=CHALLENGES[i];
+  if(challenge&&available(i,pf))selectRun(side?.activity===challenge.id&&side.phase!=='result'?side:newRun(challenge.hill,challenge.id));
+ }else if(id.startsWith('practice-')){
+  const i=Number(id.slice(9));
+  if(HILLS[i]&&i<=pf.unlocked)selectRun(newRun(i,'practice'));
+ }else if(id==='replay'){selectRun(newRun(run.hill,run.activity))}
+ else if(id==='next'||/^hill[0-2]$/.test(id)){
+  const n=id==='next'?run.hill+1:Number(id.slice(4));
   if(n>pf.unlocked||n>=HILLS.length)return;
-  run=newRun(n);mode='race';save()
+  selectRun(newRun(n))
  }else if(id.startsWith('kit-')){const k=id.slice(4);if(owned(k)){pf.kit=k;save()}}
  panel()
 });
@@ -74,16 +143,21 @@ document.addEventListener('visibilitychange',()=>{if(document.hidden)freeze()});
 window.addEventListener('pagehide',()=>{freeze();host.stop()});window.addEventListener('pageshow',e=>{if(e.persisted)location.reload()});
 function controls(){
  let fly=run.phase==='flight'||run.phase==='brake',b=$('tap'),h=HILLS[run.hill],duration=fly?flightTime(run):h.time,target=fly?targetLand(run):targetTake(run),width=h.window*.52;
- const hot=Math.abs(run.t-target)<=width&&!run.mark;
+ const gold=!fly&&takeoffBand(run);
+ const landing=fly?challengeFor(run)?.landing:undefined;
+ const precision=landing?Math.min(width,(1-landing)*h.window*1.8):width;
+ const [left,right]=gold||[target-precision,target+precision];
+ const hot=run.phase!=='brake'&&run.t>=left&&run.t<=right&&!run.mark;
  b.classList.toggle('landing',fly);b.classList.toggle('hot',hot);
  b.disabled=run.phase==='brake'||run.mark||run.t<target-.82;
  const title=fly?'LAND':'JUMP';b.querySelector('span').textContent=title;b.setAttribute('aria-label',fly?'Prepare landing':'Take off');
  $('step').textContent=fly?'02 / LANDING':'01 / TAKEOFF';
- $('hint').textContent=run.phase==='brake'?'Skis on snow':run.mark?(fly?'Landing set':'Takeoff set'):hot?'Tap now!':fly?'Watch for the mint zone':'Watch the stripe';
+ $('hint').textContent=run.phase==='brake'?'Skis on snow':run.mark?(fly?'Landing set':'Takeoff set'):hot?'Tap now!':gold?'Watch for the gold zone':fly?'Watch for the mint zone':'Watch the stripe';
  $('needle').style.left=(run.phase==='brake'?100:clamp(run.t/duration)*100)+'%';
- $('zone').style.left=(clamp((target-width)/duration)*100)+'%';
- $('zone').style.right=(100-clamp((target+width)/duration)*100)+'%';
- $('jump').textContent='JUMP '+(run.attempt+1)+' / 2';
+ $('zone').style.left=(clamp(left/duration)*100)+'%';
+ $('zone').style.right=(100-clamp(right/duration)*100)+'%';
+ $('zone').classList.toggle('gold',Boolean(gold));
+ $('jump').textContent='JUMP '+(run.attempt+1)+' / '+jumpLimit(run);
  $('wind').textContent=h.wind===0?'— Calm':(h.wind>0?'→ ':'← ')+Math.abs(h.wind).toFixed(1)+' m/s';
  $('meters').firstChild.textContent=Math.round(Math.min(Math.max(0,run.z),distanceWorld(run))*2.36)+' ';
 }
@@ -92,11 +166,19 @@ function frame(ms){
  if(document.hidden||wide.matches)return;
  if(noticeUntil&&ms>noticeUntil){$('toast').textContent='';noticeUntil=0}
  if(active()&&mode==='race'&&!paused){
-  const tutorial=run.hill===0&&run.attempt===0&&!run.mark&&(run.phase==='inrun'&&run.t>targetTake(run)-.55||run.phase==='flight'&&run.t>targetLand(run)-.55);
+  const training=run.activity==='practice'||Boolean(takeoffBand(run));
+  const tutorial=(training||run.hill===0&&run.attempt===0)&&!run.mark&&(run.phase==='inrun'&&run.t>targetTake(run)-(training?.76:.55)||run.phase==='flight'&&run.t>targetLand(run)-.55);
   const e=tick(run,dt*(tutorial?.61:1));
   if(e==='flight'){if(!run.take)notice('OFF THE LIP');tone([280,410],'triangle')}
   if(e==='touchdown'){fx={x:run.x,y:ground(run.z),z:run.z,t:1};notice(run.land>.81?'CLEAN TELEMARK':run.land>.45?'SAFE LANDING':'HARD LANDING');tone(run.land>.81?[325,490,650]:[165,120],'triangle');navigator.vibrate?.(run.land>.81?25:45)}
-  if(e==='between'||e==='result'){host.end();if(e==='result'&&settle(run,pf)){notice('HILL CLEARED');tone([440,550,660,880])}save();panel()}
+  if(e==='between'||e==='result'){
+   host.end();
+   if(e==='result'){
+    const clear=run.activity==='circuit'?settle(run,pf):recordActivity(run,pf);
+    if(clear){notice(run.activity==='circuit'?'HILL CLEARED':'CHALLENGE CLEARED');tone([440,550,660,880])}
+   }
+   save();panel();
+  }
   controls()
  }
  if(!paused&&fx)fx.t=Math.max(0,fx.t-dt*1.24);

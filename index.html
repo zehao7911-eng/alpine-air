@@ -5,6 +5,8 @@
 @media(max-width:350px),(max-height:650px){.panel{padding:12px}.panel p{margin:6px 0 9px}.panel h1,.panel h2{font-size:30px}.primary,.secondary,.choice{min-height:44px}#tap{width:72px;height:72px}.coach{padding:8px}.coach b{margin:3px 0 6px}}@media(orientation:landscape) and (max-height:540px){.rotate{display:grid;place-content:center;text-align:center;position:absolute;inset:0;z-index:6;background:#132944;font-size:38px}}
 header .meet{min-width:0;overflow:hidden;text-overflow:ellipsis}
 @media(max-width:360px){header{gap:6px}.brand{font-size:14px;gap:4px}.brand svg{width:28px}.meet{font-size:9px;letter-spacing:.055em;padding:7px 6px}}
+.rating{color:#ffdf8d;font-size:21px;letter-spacing:.1em;line-height:1.25}
+.track #zone.gold{background:#ffd77e}
 </style></head>
 <body><main id="game" aria-label="Alpine Air">
 <div id="stage" aria-hidden="true"></div><div class="vignette"></div>
@@ -25,25 +27,54 @@ header .meet{min-width:0;overflow:hidden;text-overflow:ellipsis}
  {name:'Rose Glacier',code:'RG / 02',target:147,wind:1.2,time:3.45,window:.30,sky:0xe0acc2,snow:0xf6ebff,accent:0xffce9d},
  {name:'Aurora Ridge',code:'AR / 03',target:184,wind:-1.9,time:3.3,window:.25,sky:0x7581bc,snow:0xcedcff,accent:0xc8dbff}
 ];
+const CHALLENGES=[
+ {id:'blue-line',name:'Blue Line',hill:0,jumps:1,band:[74,87],landing:.45,detail:'Land at 74–87 m. Tap in the gold zone for a shorter jump.'},
+ {id:'soft-snow',name:'Soft Snow',hill:0,jumps:1,min:88,landing:.82,detail:'Reach 88 m and land with a clean telemark.'},
+ {id:'twin-tracks',name:'Twin Tracks',hill:1,jumps:2,min:87,gap:9,landing:.42,detail:'Jump at least 87 m twice, with no more than 9 m between your marks.'},
+ {id:'rose-gate',name:'Rose Gate',hill:1,jumps:1,band:[92,103],landing:.68,detail:'Land inside the 92–103 m gold zone with a controlled landing.'},
+ {id:'ridge-reach',name:'Ridge Reach',hill:2,jumps:1,min:104,landing:.66,detail:'Reach 104 m and land with control on Aurora Ridge.'},
+ {id:'north-star',name:'North Star',hill:2,jumps:2,min:99,gap:7,landing:.75,detail:'Land two jumps of at least 99 m, within 7 m of each other.'}
+];
 const clamp=(x,a=0,b=1)=>Math.min(b,Math.max(a,x));
+const challengeFor=run=>CHALLENGES.find(challenge=>challenge.id===run.activity);
+const jumpLimit=run=>run.activity==='circuit'?2:challengeFor(run)?.jumps??1;
+const available=(i,p)=>i===0||Boolean(p.medals[CHALLENGES[i-1]?.id]);
 function ground(z){
  if(z<0){let t=clamp((z+36)/36);return 30-16*(1-Math.pow(1-t,1.42))-.39*Math.pow(t,12)}
  const q=Math.min(z,43), u=clamp((z-43)/19);
  return 13.61-.46*q-8.74*(u-u*u/2);
 }
-function profile(v={}){return {unlocked:Number.isInteger(v.unlocked)?clamp(v.unlocked,0,2):0,best:HILLS.map((_,i)=>clamp(Number(v.best?.[i])||0,0,350)),aurora:v.aurora===true,ember:v.ember===true,kit:['blue','rose','ice','aurora','ember'].includes(v.kit)?v.kit:'blue',sound:v.sound!==false}}
-function newRun(hill=0){return {hill,attempt:0,results:[],phase:'ready',t:0,take:0,land:0,mark:false,z:-35,x:0}}
-function restoreRun(r,p){
- if(!r||!Number.isInteger(r.hill)||r.hill<0||r.hill>p.unlocked||!Array.isArray(r.results)||r.results.length>2)return null;
- const s=newRun(r.hill);
- s.results=r.results.filter(v=>v&&[v.distance,v.style,v.points,v.take,v.land].every(Number.isFinite)).map(v=>({distance:clamp(v.distance,0,150),style:clamp(v.style,0,20),points:clamp(v.points,0,200),take:clamp(v.take),land:clamp(v.land)}));
- s.attempt=Math.min(1,s.results.length);if(s.results.length===2){s.phase='result';s.take=s.results[1].take;s.land=s.results[1].land;s.z=distanceWorld(s)+9;s.x=HILLS[s.hill].wind}return s;
+function profile(v={}){
+ const medals={};
+ for(const {id} of CHALLENGES)medals[id]=clamp(Math.floor(Number(v.medals?.[id])||0),0,3);
+ return {unlocked:Number.isInteger(v.unlocked)?clamp(v.unlocked,0,2):0,best:HILLS.map((_,i)=>clamp(Number(v.best?.[i])||0,0,350)),practice:HILLS.map((_,i)=>clamp(Number(v.practice?.[i])||0,0,150)),medals,aurora:v.aurora===true,ember:v.ember===true,kit:['blue','rose','ice','aurora','ember','summit','gold'].includes(v.kit)?v.kit:'blue',sound:v.sound!==false}
 }
-function snapshotRun(r){return r&&{hill:r.hill,results:r.results}}
+function newRun(hill=0,activity='circuit'){return {hill,activity,attempt:0,results:[],phase:'ready',t:0,take:0,land:0,mark:false,z:-35,x:0}}
+function restoreRun(r,p){
+ if(!r||!Number.isInteger(r.hill)||!HILLS[r.hill]||!Array.isArray(r.results))return null;
+ const s=newRun(r.hill,r.activity??'circuit');
+ const challenge=challengeFor(s);
+ if(challenge){if(challenge.hill!==s.hill||!available(CHALLENGES.indexOf(challenge),p))return null}
+ else if(!['circuit','practice'].includes(s.activity)||s.hill>p.unlocked)return null;
+ const limit=jumpLimit(s);
+ if(r.results.length>limit)return null;
+ s.results=r.results.filter(v=>v&&[v.distance,v.style,v.points,v.take,v.land].every(Number.isFinite)).map(v=>({distance:clamp(v.distance,0,150),style:clamp(v.style,0,20),points:clamp(v.points,0,200),take:clamp(v.take),land:clamp(v.land)}));
+ s.attempt=Math.min(limit-1,s.results.length);
+ if(s.results.length===limit){const last=s.results.at(-1);s.phase='result';s.take=last.take;s.land=last.land;s.z=distanceWorld(s)+9;s.x=HILLS[s.hill].wind}
+ return s;
+}
+function snapshotRun(r){return r&&{hill:r.hill,results:r.results,...(r.activity==='circuit'?{}:{activity:r.activity})}}
 function targetTake(r){return HILLS[r.hill].time-.14}
 function flightTime(r){return 2.15+r.take*1.18+r.hill*.10}
 function targetLand(r){return flightTime(r)-.23}
 function distanceWorld(r){return 25+20*r.take+r.hill*1.6}
+function takeoffBand(run){
+ const band=challengeFor(run)?.band;
+ if(!band)return null;
+ const start=distanceWorld({...run,take:0})*2.36;
+ const timing=metres=>targetTake(run)-(1-clamp((metres-start)/47.2))*HILLS[run.hill].window*1.75;
+ return [timing(band[0]-.5),timing(band[1]+.499)];
+}
 function action(r){
  if(r.phase==='ready'){r.phase='inrun';r.t=0;return 'start'}
  if(r.phase==='inrun'&&!r.mark&&r.t>=targetTake(r)-.82){
@@ -69,17 +100,40 @@ function tick(r,dt){
   if(u>=1){r.phase='brake';r.t=0;return 'touchdown'}
  }else if(r.phase==='brake'){
   const u=clamp(r.t/1.35);r.z=distanceWorld(r)+9*(1-(1-u)*(1-u));
-  if(u>=1){r.results.push(scoreJump(r));r.phase=r.results.length===2?'result':'between';r.t=0;return r.phase}
+  if(u>=1){r.results.push(scoreJump(r));r.phase=r.results.length===jumpLimit(r)?'result':'between';r.t=0;return r.phase}
  }
  return '';
 }
-function nextAttempt(r){if(r.phase!=='between')return false;Object.assign(r,newRun(r.hill),{attempt:1,results:r.results});return true}
+function nextAttempt(r){if(r.phase!=='between')return false;Object.assign(r,newRun(r.hill,r.activity),{attempt:r.results.length,results:r.results});return true}
 function total(r){return Math.round(r.results.reduce((s,v)=>s+v.points,0)*10)/10}
 function settle(r,p){
- if(r.phase!=='result'||r.results.length!==2)return false;
+ if(r.activity!=='circuit'||r.phase!=='result'||r.results.length!==2)return false;
  let t=total(r);p.best[r.hill]=Math.max(t,p.best[r.hill]);
  if(t>=HILLS[r.hill].target)p.unlocked=Math.max(p.unlocked,Math.min(2,r.hill+1));
  return t>=HILLS[r.hill].target;
+}
+function challengeResult(run){
+ const challenge=challengeFor(run);
+ if(!challenge||run.phase!=='result'||run.results.length!==challenge.jumps)return {stars:0,reason:''};
+ const distances=run.results.map(jump=>jump.distance);
+ const shortest=Math.min(...distances),spread=Math.max(...distances)-shortest;
+ const landing=Math.min(...run.results.map(jump=>jump.land));
+ if(challenge.band&&distances.some(d=>d<challenge.band[0]||d>challenge.band[1]))return {stars:0,reason:'Your jump missed the gold distance zone.'};
+ if(shortest<(challenge.min??0))return {stars:0,reason:'One of your jumps fell short of the distance goal.'};
+ if(spread>(challenge.gap??Infinity))return {stars:0,reason:'Your two marks were '+spread+' m apart.'};
+ if(landing<challenge.landing)return {stars:0,reason:'Tap closer to the center of the landing zone.'};
+ const stars=landing>=.90&&spread<=(challenge.gap??Infinity)/2?3:landing>=Math.max(.68,challenge.landing+.04)?2:1;
+ return {stars,reason:challenge.gap?'Your marks were '+spread+' m apart.':'Target reached.'};
+}
+function recordActivity(run,p){
+ if(run.phase!=='result')return false;
+ if(run.activity==='practice'){
+  p.practice[run.hill]=Math.max(p.practice[run.hill],run.results[0].distance);
+  return false;
+ }
+ const {stars}=challengeResult(run);
+ if(stars)p.medals[run.activity]=Math.max(p.medals[run.activity],stars);
+ return stars>0;
 }
 
 const Three = window.THREE;
@@ -89,7 +143,9 @@ const colors = {
   rose: [0xa92c55, 0xfb977e],
   ice: [0x277b90, 0x8df3ea],
   aurora: [0x5438a5, 0xa796ef],
-  ember: [0xab3d28, 0xffac63]
+  ember: [0xab3d28, 0xffac63],
+  summit: [0x185e57, 0x8cebb2],
+  gold: [0x935419, 0xffd777]
 };
 const fabric = (color, roughness = .72, metalness = 0) =>
   new Three.MeshStandardMaterial({ color, roughness, metalness });
@@ -598,6 +654,10 @@ class AlpineView{
   this.strip(p,-3.4,3.4,-2.08,-.88,0x5bd9ae,.042);
   this.strip(p,-3.43,3.43,-.32,-.04,0x1c6080,.043);
   this.marker=this.strip(p,-3.35,3.35,26,28,0x67eab7,.048);
+  this.targetMarker=this.strip(p,-3.35,3.35,28,36,0xeab155,.045);
+  this.targetMarker.frustumCulled=false;
+  this.targetMarker.visible=false;
+  this.markerBand=null;
   this.strip(p,-4.05,4.05,-38,-36,h.snow,.001);
   this.box(p,0,ground(-34.1)-.62,-36,9,1,3.8,0x2c506a);
   this.box(p,0,ground(-36)+3.65,-36,8.9,.23,.28,0x13364e);
@@ -650,8 +710,8 @@ class AlpineView{
  }
  render(run,kit,mode,fx,reduced,dt=1/60){
   if(run.hill!==this.id)this.make(run.hill);
-  let r=run, z=r.z, x=r.x, fly=r.phase==='flight', u=fly?clamp(r.t/flightTime(r)):0, intro=mode==='home'||mode==='hills'||mode==='kits'||r.phase==='ready';
-  let close=mode==='home'||mode==='hills'||mode==='kits';
+  let r=run, z=r.z, x=r.x, fly=r.phase==='flight', u=fly?clamp(r.t/flightTime(r)):0;
+  const close=mode!=='race', intro=close||r.phase==='ready';
   if(intro){z=close?-27:-35;x=0}
   const g=ground(z),slope=Math.atan2(ground(z+.85)-ground(z-.85),1.70);
   const air=fly?Math.sin(u*Math.PI)*(2.55+1.05*r.take):0;
@@ -665,7 +725,18 @@ class AlpineView{
   this.shad.rotation.x=-slope;
   this.shad.scale.set(.46+air*.10,1,1.15+air*.18);
   this.shad.material.opacity=1/(1+air*.54);
-  this.marker.visible=fly||r.phase==='brake';let a=distanceWorld(r)-1.7;const pos=this.marker.geometry.attributes.position;for(let i=0;i<pos.count;i++){let nz=a+Math.floor(i/2)*2/3;pos.setY(i,ground(nz)+.049);pos.setZ(i,nz)}pos.needsUpdate=true;this.marker.frustumCulled=false;
+  const band=challengeFor(r)?.band;
+  const showMark=!close&&(fly||r.phase==='brake');
+  this.marker.visible=showMark&&!band;
+  if(this.marker.visible){
+   const end=distanceWorld(r)+.30;
+   this.moveMarker(this.marker,end-2,end,.049);
+  }
+  this.targetMarker.visible=showMark&&Boolean(band);
+  if(this.targetMarker.visible&&this.markerBand!==band){
+   this.moveMarker(this.targetMarker,(band[0]-.5)/2.36,(band[1]+.5)/2.36,.045);
+   this.markerBand=band;
+  }
   this.drawSnow(r,fx,reduced);
   this.flags.forEach((flag,i)=>{
    flag.rotation.y=.14*HILLS[r.hill].wind+(reduced?0:Math.sin(r.t*5+i*.83)*.20);
@@ -676,6 +747,17 @@ class AlpineView{
   if(!this.lastPhase||reduced||this.lastPhase==='result'&&r.phase==='ready'||intro&&this.lastPhase!=='ready'){this.cam.copy(ca);this.look.copy(look)}else{this.cam.lerp(ca,.12);this.look.lerp(look,.15)}
   if(Math.abs(this.cam.x)<4.1)this.cam.y=Math.max(this.cam.y,ground(this.cam.z)+1.15);
   this.lastPhase=r.phase;this.c.position.copy(this.cam);this.c.lookAt(this.look);this.r.render(this.s,this.c);
+ }
+
+ moveMarker(mesh,start,end,lift){
+  const points=mesh.geometry.attributes.position;
+  for(let i=0;i<points.count;i++){
+   const z=mix(start,end,Math.floor(i/2)/(points.count/2-1));
+   points.setY(i,ground(z)+lift);
+   points.setZ(i,z);
+  }
+  points.needsUpdate=true;
+  mesh.frustumCulled=false;
  }
 
  drawSnow(run,fx,reduced){
@@ -736,19 +818,62 @@ const $=id=>document.getElementById(id),key='alpine-air-v1';
 const reduced=matchMedia('(prefers-reduced-motion: reduce)');
 let data;try{data=JSON.parse(localStorage.getItem(key)||'null')}catch{}
 const valid=v=>v?.game==='alpine-air'&&v.v===1&&v.profile&&typeof v.profile==='object';
-let pf=profile(valid(data)?data.profile:undefined), run=restoreRun(valid(data)?data.run:null,pf)||newRun(),mode='home',paused=false,changed=false,support={},fx=null,noticeUntil=0,last=0,ctx=null,view;
+let pf=profile(valid(data)?data.profile:undefined);
+let circuit=restoreRun(valid(data)?data.run:null,pf)||newRun();
+let side=restoreRun(valid(data)?data.side:null,pf);
+let run=data?.selected==='side'&&side?side:circuit;
+let mode='home',paused=false,changed=false,support={},fx=null,noticeUntil=0,last=0,ctx=null,view;
 const host=new AlpineHost(window,{
  status(v){support=v;if(mode==='kits')panel()},
  reward(kit){if(pf[kit])return;pf[kit]=true;save();notice(kit==='aurora'?'Aurora suit unlocked':'Ember suit unlocked');tone([490,650,800]);if(mode==='kits')panel()},
- load(v){if(!valid(v))return;let cloud=profile(v.profile);if(!changed&&!valid(data)){pf=cloud;run=restoreRun(v.run,pf)||newRun();try{localStorage.setItem(key,JSON.stringify(payload()))}catch{}}else{pf.unlocked=Math.max(pf.unlocked,cloud.unlocked);pf.best=pf.best.map((n,i)=>Math.max(n,cloud.best[i]));pf.aurora||=cloud.aurora;pf.ember||=cloud.ember;save()}if(!active()||paused)panel()}
+ load(v){
+  if(!valid(v))return;
+  const cloud=profile(v.profile);
+  if(!changed&&!valid(data)){
+   pf=cloud;
+   circuit=restoreRun(v.run,pf)||newRun();
+   side=restoreRun(v.side,pf);
+   run=v.selected==='side'&&side?side:circuit;
+   try{localStorage.setItem(key,JSON.stringify(payload()))}catch{}
+  }else{
+   pf.unlocked=Math.max(pf.unlocked,cloud.unlocked);
+   pf.best=pf.best.map((n,i)=>Math.max(n,cloud.best[i]));
+   pf.practice=pf.practice.map((n,i)=>Math.max(n,cloud.practice[i]));
+   for(const {id} of CHALLENGES)pf.medals[id]=Math.max(pf.medals[id],cloud.medals[id]);
+   pf.aurora||=cloud.aurora;
+   pf.ember||=cloud.ember;
+   save();
+  }
+  if(!active()||paused)panel();
+ }
 });
-function payload(){return {game:'alpine-air',v:1,profile:pf,run:snapshotRun(run)}}
+function payload(){return {game:'alpine-air',v:1,profile:pf,run:snapshotRun(circuit),side:snapshotRun(side),selected:run===side?'side':'circuit'}}
+function selectRun(next){run=next;if(next.activity==='circuit')circuit=next;else side=next;mode='race';fx=null;save()}
 function save(){changed=true;let p=payload();try{localStorage.setItem(key,JSON.stringify(p))}catch{}host.save(p)}
 function tone(notes,type='sine'){if(!pf.sound)return;try{ctx??=new (window.AudioContext||window.webkitAudioContext)();if(ctx.state==='suspended')ctx.resume().catch(()=>{});const at=ctx.currentTime;notes.forEach((freq,i)=>{const t=at+i*.073,o=ctx.createOscillator(),g=ctx.createGain();o.type=type;o.frequency.value=freq;g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(.063,t+.025);g.gain.exponentialRampToValueAtTime(.0001,t+.20);o.connect(g);g.connect(ctx.destination);o.start(t);o.stop(t+.205)})}catch{}}
 function notice(s){$('toast').textContent=s;noticeUntil=performance.now()+1050}
 const button=(label,id,cl='primary',tail='→',disabled=false)=>'<button type="button" class="'+cl+'" data-do="'+id+'" '+(disabled?'disabled':'')+'><span>'+label+'</span><span aria-hidden="true">'+tail+'</span></button>';
-const names={blue:'Basin Blue',rose:'Glacier Rose',ice:'Ridge Ice',aurora:'Aurora Violet',ember:'Ember Orange'};
-const owned=k=>k==='blue'||k==='rose'&&pf.unlocked>=1||k==='ice'&&pf.best[2]>=HILLS[2].target||((k==='aurora'||k==='ember')&&pf[k]);
+const names={blue:'Basin Blue',rose:'Glacier Rose',ice:'Ridge Ice',summit:'Summit Green',gold:'Suncrest Gold',aurora:'Aurora Violet',ember:'Ember Orange'};
+const starTotal=()=>Object.values(pf.medals).reduce((sum,stars)=>sum+stars,0);
+const owned=k=>k==='blue'||k==='rose'&&pf.unlocked>=1||k==='ice'&&pf.best[2]>=HILLS[2].target||k==='summit'&&starTotal()>=4||k==='gold'&&starTotal()>=12||((k==='aurora'||k==='ember')&&pf[k]);
+const starsLabel=stars=>'★'.repeat(stars)+'☆'.repeat(3-stars);
+function marks(run){
+ return '<div class="scores">'+run.results.map(jump=>'<div class="score"><strong>'+jump.distance+' m</strong><span>Style '+jump.style.toFixed(1)+'</span><b>'+jump.points.toFixed(1)+' pts</b></div>').join('')+'</div>';
+}
+function activityPanel(){
+ const challenge=challengeFor(run);
+ const name=challenge?.name??'Practice';
+ const label='<small>'+name+' · '+HILLS[run.hill].name+'</small>';
+ if(run.phase==='ready')return label+'<h2>At the gate</h2><p>'+(challenge?.detail??'Train your timing with slower cues. Every jump counts toward your practice best.')+'</p>'+button('Start descent','start');
+ if(run.phase==='between')return label+'<h2>First mark</h2>'+marks(run)+'<p>Match your first jump to stay within '+challenge.gap+' m.</p>'+button('Next jump','second');
+ if(run.phase!=='result')return '';
+ if(!challenge)return label+'<h2>Practice mark</h2>'+marks(run)+'<p>Personal best · '+pf.practice[run.hill]+' m</p>'+button('Jump again','replay')+'<div class="row">'+button('Practice hills','practice','secondary','◭')+button('Home','home','secondary','←')+'</div>';
+ const {stars,reason}=challengeResult(run);
+ const next=CHALLENGES.indexOf(challenge)+1;
+ const advance=stars&&next<CHALLENGES.length;
+ return label+'<h2>'+(stars?'Challenge cleared':'Try again')+'</h2><div class="rating" aria-label="'+stars+' out of 3 stars">'+starsLabel(stars)+'</div>'+marks(run)+'<p>'+reason+'</p>'+
+  (advance?button('Next challenge','challenge-'+next):'')+'<div class="row">'+button('Jump again','replay',advance?'secondary':'primary','↻')+button('Challenge board','challenges','secondary','◈')+'</div>';
+}
 const active=()=>['inrun','flight','brake'].includes(run.phase);
 const wide=matchMedia('(orientation:landscape) and (max-height:540px)');
 function panel(){
@@ -757,13 +882,30 @@ function panel(){
  $('controls').hidden=mode!=='race'||!active()||paused;
  if(!view)return;
  if(paused){html='<small>Alpine circuit</small><h2>Paused</h2>'+button('Resume','resume')+'<div class="row">'+button(pf.sound?'Sound on':'Sound off','sound','secondary','♪')+'</div>'}
- else if(mode==='home'){html='<small>THE ALPINE CIRCUIT</small><h1>Catch the air.</h1><p>Tap to jump at the edge. Tap again just before your skis touch down.</p>'+button(run.phase==='result'?'View results':run.results.length?'Continue meet':'Enter meet','enter')+'<div class="row">'+button('Hills','hills','secondary','◭')+button('Suits','kits','secondary','◇')+'</div>'}
+ else if(mode==='home'){
+  html='<small>THE ALPINE CIRCUIT</small><h1>Catch the air.</h1><p>Tap to jump at the edge. Tap again just before your skis touch down.</p>'+
+   (run===side&&side.phase!=='result'?button('Resume '+(challengeFor(side)?.name??'practice'),'resume-side'):'')+
+   button(circuit.phase==='result'?'View results':circuit.results.length?'Continue meet':'Enter meet','enter',run===side&&side.phase!=='result'?'choice':'primary')+
+   '<div class="row">'+button('Challenges','challenges','secondary','◈')+button('Practice','practice','secondary','↻')+'</div>'+
+   '<div class="row">'+button('Hills','hills','secondary','◭')+button('Suits','kits','secondary','◇')+'</div>';
+ }
+ else if(mode==='challenges'){
+  html='<small>Alpine challenge board</small><h2>Challenges</h2><p>'+starTotal()+' / 18 stars · Clear a challenge to unlock the next.</p>'+
+   CHALLENGES.map((c,i)=>button(c.name,'challenge-'+i,'choice',available(i,pf)?starsLabel(pf.medals[c.id]):'LOCKED',!available(i,pf))).join('')+
+   '<div class="row">'+button('Back','home','secondary','←')+'</div>';
+ }
+ else if(mode==='practice'){
+  html='<small>Open training</small><h2>Practice</h2><p>One jump at a time. Slower timing cues and a personal best for each hill.</p>'+
+   HILLS.map((v,i)=>button(v.name,'practice-'+i,'choice',i>pf.unlocked?'LOCKED':pf.practice[i]?pf.practice[i]+' M':'→',i>pf.unlocked)).join('')+
+   '<div class="row">'+button('Back','home','secondary','←')+'</div>';
+ }
  else if(mode==='hills'){html='<small>Alpine circuit</small><h2>Hills</h2>'+HILLS.map((v,i)=>button(v.name,'hill'+i,'choice',i>pf.unlocked?'LOCKED':pf.best[i]?pf.best[i].toFixed(1)+' PTS':'→',i>pf.unlocked)).join('')+'<div class="row">'+button('Back','home','secondary','←')+'</div>'}
- else if(mode==='kits'){html='<small>Equipment</small><h2>Ski suits</h2>'+Object.keys(names).filter(k=>!['aurora','ember'].includes(k)||support[k]||pf[k]).map(k=>button(names[k],'kit-'+k,'choice',pf.kit===k?'✓':owned(k)?'◇':'LOCKED',!owned(k))).join('');
+ else if(mode==='kits'){html='<small>Equipment</small><h2>Ski suits</h2>'+Object.keys(names).filter(k=>!['aurora','ember'].includes(k)||support[k]||pf[k]).map(k=>button(names[k],'kit-'+k,'choice',pf.kit===k?'✓':owned(k)?'◇':k==='summit'?'4 STARS':k==='gold'?'12 STARS':'LOCKED',!owned(k))).join('');
   if(support.aurora&&!pf.aurora)html+='<p class="reward">Like this game in GameWave to unlock Aurora Violet.</p>';
   if(support.ember&&!pf.ember)html+='<p class="reward">Post a direct comment in GameWave to unlock Ember Orange.</p>';
   html+='<div class="row">'+button('Back','home','secondary','←')+button(pf.sound?'Sound on':'Sound off','sound','secondary','♪')+'</div>';
- }else if(run.phase==='ready'){html='<small>'+h.name+' · Jump '+(run.attempt+1)+' / 2</small><h2>At the gate</h2><p>Tap when the timing bar reaches mint. Two jumps to score '+h.target+' points.</p>'+button('Start descent','start')}
+ }else if(run.activity!=='circuit'){html=activityPanel()}
+ else if(run.phase==='ready'){html='<small>'+h.name+' · Jump '+(run.attempt+1)+' / 2</small><h2>At the gate</h2><p>Tap when the timing bar reaches mint. Two jumps to score '+h.target+' points.</p>'+button('Start descent','start')}
  else if(run.phase==='between'||run.phase==='result'){
   const done=run.phase==='result',win=total(run)>=h.target;
   html='<small>'+h.name+' · '+(done?'Meet results':'Jump 1 of 2')+'</small><h2>'+(done?(win?(run.hill===2?'Circuit champion':'Hill cleared'):'Try another meet'):'First mark')+'</h2>'+(win&&done?'<div class="medal" aria-hidden="true">✦</div>':'')+'<div class="scores">'+run.results.map((v,i)=>'<div class="score"><strong>'+v.distance+' m</strong><span>Style '+v.style.toFixed(1)+'</span><b>'+v.points.toFixed(1)+' pts</b></div>').join('')+'</div><p>'+total(run).toFixed(1)+' / '+h.target+' points'+(done&&win&&run.hill<2?' · '+HILLS[run.hill+1].name+' unlocked':'')+'</p>';
@@ -787,13 +929,21 @@ $('panel').addEventListener('click',ev=>{
  if(id==='resume'){paused=false;panel();return}
  if(id==='sound'){pf.sound=!pf.sound;save();if(pf.sound)tone([500]);panel();return}
  tone([380]);
- if(id==='enter')mode='race';
- else if(id==='home'||id==='hills'||id==='kits')mode=id;
+ if(id==='enter')selectRun(circuit);
+ else if(id==='resume-side'&&side)selectRun(side);
+ else if(['home','hills','kits','challenges','practice'].includes(id))mode=id;
  else if(id==='second'){nextAttempt(run);mode='race';save()}
- else if(id==='replay'||id==='next'||/^hill[0-2]$/.test(id)){
-  const n=id==='next'?run.hill+1:id==='replay'?run.hill:Number(id.slice(4));
+ else if(id.startsWith('challenge-')){
+  const i=Number(id.slice(10)),challenge=CHALLENGES[i];
+  if(challenge&&available(i,pf))selectRun(side?.activity===challenge.id&&side.phase!=='result'?side:newRun(challenge.hill,challenge.id));
+ }else if(id.startsWith('practice-')){
+  const i=Number(id.slice(9));
+  if(HILLS[i]&&i<=pf.unlocked)selectRun(newRun(i,'practice'));
+ }else if(id==='replay'){selectRun(newRun(run.hill,run.activity))}
+ else if(id==='next'||/^hill[0-2]$/.test(id)){
+  const n=id==='next'?run.hill+1:Number(id.slice(4));
   if(n>pf.unlocked||n>=HILLS.length)return;
-  run=newRun(n);mode='race';save()
+  selectRun(newRun(n))
  }else if(id.startsWith('kit-')){const k=id.slice(4);if(owned(k)){pf.kit=k;save()}}
  panel()
 });
@@ -805,16 +955,21 @@ document.addEventListener('visibilitychange',()=>{if(document.hidden)freeze()});
 window.addEventListener('pagehide',()=>{freeze();host.stop()});window.addEventListener('pageshow',e=>{if(e.persisted)location.reload()});
 function controls(){
  let fly=run.phase==='flight'||run.phase==='brake',b=$('tap'),h=HILLS[run.hill],duration=fly?flightTime(run):h.time,target=fly?targetLand(run):targetTake(run),width=h.window*.52;
- const hot=Math.abs(run.t-target)<=width&&!run.mark;
+ const gold=!fly&&takeoffBand(run);
+ const landing=fly?challengeFor(run)?.landing:undefined;
+ const precision=landing?Math.min(width,(1-landing)*h.window*1.8):width;
+ const [left,right]=gold||[target-precision,target+precision];
+ const hot=run.phase!=='brake'&&run.t>=left&&run.t<=right&&!run.mark;
  b.classList.toggle('landing',fly);b.classList.toggle('hot',hot);
  b.disabled=run.phase==='brake'||run.mark||run.t<target-.82;
  const title=fly?'LAND':'JUMP';b.querySelector('span').textContent=title;b.setAttribute('aria-label',fly?'Prepare landing':'Take off');
  $('step').textContent=fly?'02 / LANDING':'01 / TAKEOFF';
- $('hint').textContent=run.phase==='brake'?'Skis on snow':run.mark?(fly?'Landing set':'Takeoff set'):hot?'Tap now!':fly?'Watch for the mint zone':'Watch the stripe';
+ $('hint').textContent=run.phase==='brake'?'Skis on snow':run.mark?(fly?'Landing set':'Takeoff set'):hot?'Tap now!':gold?'Watch for the gold zone':fly?'Watch for the mint zone':'Watch the stripe';
  $('needle').style.left=(run.phase==='brake'?100:clamp(run.t/duration)*100)+'%';
- $('zone').style.left=(clamp((target-width)/duration)*100)+'%';
- $('zone').style.right=(100-clamp((target+width)/duration)*100)+'%';
- $('jump').textContent='JUMP '+(run.attempt+1)+' / 2';
+ $('zone').style.left=(clamp(left/duration)*100)+'%';
+ $('zone').style.right=(100-clamp(right/duration)*100)+'%';
+ $('zone').classList.toggle('gold',Boolean(gold));
+ $('jump').textContent='JUMP '+(run.attempt+1)+' / '+jumpLimit(run);
  $('wind').textContent=h.wind===0?'— Calm':(h.wind>0?'→ ':'← ')+Math.abs(h.wind).toFixed(1)+' m/s';
  $('meters').firstChild.textContent=Math.round(Math.min(Math.max(0,run.z),distanceWorld(run))*2.36)+' ';
 }
@@ -823,11 +978,19 @@ function frame(ms){
  if(document.hidden||wide.matches)return;
  if(noticeUntil&&ms>noticeUntil){$('toast').textContent='';noticeUntil=0}
  if(active()&&mode==='race'&&!paused){
-  const tutorial=run.hill===0&&run.attempt===0&&!run.mark&&(run.phase==='inrun'&&run.t>targetTake(run)-.55||run.phase==='flight'&&run.t>targetLand(run)-.55);
+  const training=run.activity==='practice'||Boolean(takeoffBand(run));
+  const tutorial=(training||run.hill===0&&run.attempt===0)&&!run.mark&&(run.phase==='inrun'&&run.t>targetTake(run)-(training?.76:.55)||run.phase==='flight'&&run.t>targetLand(run)-.55);
   const e=tick(run,dt*(tutorial?.61:1));
   if(e==='flight'){if(!run.take)notice('OFF THE LIP');tone([280,410],'triangle')}
   if(e==='touchdown'){fx={x:run.x,y:ground(run.z),z:run.z,t:1};notice(run.land>.81?'CLEAN TELEMARK':run.land>.45?'SAFE LANDING':'HARD LANDING');tone(run.land>.81?[325,490,650]:[165,120],'triangle');navigator.vibrate?.(run.land>.81?25:45)}
-  if(e==='between'||e==='result'){host.end();if(e==='result'&&settle(run,pf)){notice('HILL CLEARED');tone([440,550,660,880])}save();panel()}
+  if(e==='between'||e==='result'){
+   host.end();
+   if(e==='result'){
+    const clear=run.activity==='circuit'?settle(run,pf):recordActivity(run,pf);
+    if(clear){notice(run.activity==='circuit'?'HILL CLEARED':'CHALLENGE CLEARED');tone([440,550,660,880])}
+   }
+   save();panel();
+  }
   controls()
  }
  if(!paused&&fx)fx.t=Math.max(0,fx.t-dt*1.24);

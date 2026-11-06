@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
-import {action, ground, HILLS, newRun, targetLand, targetTake, tick} from './core.mjs';
+import {action, ground, HILLS, CHALLENGES, newRun, targetLand, targetTake, takeoffBand, tick} from './core.mjs';
 
 const require = createRequire(import.meta.url);
 const THREE = require('./vendor/three.min.js');
@@ -82,6 +82,19 @@ for (let hill = 0; hill < HILLS.length; hill++) {
     }
   }
 }
-assert.deepEqual([...phases],['ready','inrun','flight','brake','between']);
+for (const challenge of CHALLENGES.filter(challenge=>challenge.band)) {
+  const run = newRun(challenge.hill,challenge.id);
+  const [left,right] = takeoffBand(run);
+  view.lastPhase = '';
+  action(run);
+  while (['inrun','flight','brake'].includes(run.phase)) {
+    if(run.phase==='inrun'&&run.t>=(left+right)/2&&!run.mark)action(run);
+    if(run.phase==='flight'&&run.t>=targetLand(run)&&!run.mark)action(run);
+    tick(run,1/60);
+    verifyFrame(run,'race',1/60,false);
+    if(run.phase==='flight')assert.ok(view.targetMarker.visible&&!view.marker.visible,'precision challenge shows only its landing band');
+  }
+}
+assert.deepEqual([...phases],['ready','inrun','flight','brake','between','result']);
 console.log('PASS '+frames+' frames against the actual venue mesh. Minimum ski separation '+(minGap*2).toFixed(3)+
   ' and minimum snow clearance '+minSole.toFixed(3)+' world units.');

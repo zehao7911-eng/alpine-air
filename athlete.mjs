@@ -7,7 +7,9 @@ const colors = {
   rose: [0xa92c55, 0xfb977e],
   ice: [0x277b90, 0x8df3ea],
   aurora: [0x5438a5, 0xa796ef],
-  ember: [0xab3d28, 0xffac63]
+  ember: [0xab3d28, 0xffac63],
+  summit: [0x185e57, 0x8cebb2],
+  gold: [0x935419, 0xffd777]
 };
 const fabric = (color, roughness = .72, metalness = 0) =>
   new Three.MeshStandardMaterial({ color, roughness, metalness });

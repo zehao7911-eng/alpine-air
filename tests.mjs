@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {HILLS,newRun,profile,action,tick,flightTime,targetTake,targetLand,nextAttempt,settle,total,restoreRun,snapshotRun} from './core.mjs';
+import {CHALLENGES,available,jumpLimit,takeoffBand,challengeResult,recordActivity} from './core.mjs';
 import {AlpineHost} from './sdk.mjs';
 let n=0;const check=(v,msg)=>{assert.ok(v,msg);n++};
 const flush=()=>new Promise(r=>setImmediate(r));
@@ -42,4 +43,46 @@ e=env({loadUserGameState:()=>new Promise(()=>{}),saveUserGameState(){saves++},on
 h=new AlpineHost(e);h.connect();h.save({game:'alpine-air',v:1});for(let f of [...e.jobs.values()])f();resolve({code:0,data:{unsubscribe(){lateOff++}}});await flush();h.stop();check(lateOff===2&&!saves,'registration timeout cleans up and unknown cloud is not overwritten');
 h=new AlpineHost(env({gameStart:()=>Promise.reject(Error()),gameOver(){throw Error()},onLike:()=>Promise.reject(Error()),onComment:async()=>({code:-6}),loadUserGameState:async()=>({game:'foreign'}),saveUserGameState(){saves++}}));
 h.connect();h.start();h.end();h.save({game:'alpine-air',v:1});await flush();h.stop();check(!saves,'async failures and foreign cloud state stay isolated');
+const medals=profile({unlocked:0,best:[123]});
+check(restoreRun({hill:0,results:[]},medals).activity==='circuit','existing circuit snapshot still loads');
+check(!available(1,medals),'challenge two starts locked');
+let contentStarts=0,contentEnds=0;
+const activityHost=new AlpineHost(env({gameStart(){contentStarts++},gameOver(){contentEnds++}}));
+activityHost.connect();
+function playActivity(run,{miss=false,customAim=true}={}){
+ check(action(run)==='start','activity starts on descent');
+ activityHost.start();
+ const band=customAim&&takeoffBand(run);
+ const aim=band?(band[0]+band[1])/2:targetTake(run);
+ for(let i=0;i<2000&&['inrun','flight','brake'].includes(run.phase);i++){
+  if(run.phase==='inrun'&&!run.mark&&run.t>=aim)action(run);
+  if(!miss&&run.phase==='flight'&&!run.mark&&run.t>=targetLand(run))action(run);
+  tick(run,.005);
+ }
+ check(['between','result'].includes(run.phase),'activity completes with a recorded jump');
+ activityHost.end();
+}
+const missed=newRun(0,CHALLENGES[0].id);
+playActivity(missed,{customAim:false});
+check(!recordActivity(missed,medals)&&!available(1,medals),'overshooting the target does not unlock the next challenge');
+for(const [i,challenge] of CHALLENGES.entries()){
+ check(available(i,medals),'cleared challenge unlocks next card');
+ let run=newRun(challenge.hill,challenge.id);
+ check(jumpLimit(run)===challenge.jumps,'correct jump count');
+ playActivity(run);
+ if(challenge.jumps===2){
+  const first=run.results[0].distance;
+  run=restoreRun(snapshotRun(run),medals);
+  check(run.phase==='ready'&&run.attempt===1&&run.results[0].distance===first,'restored challenge keeps its first mark');
+  playActivity(run);
+ }
+ check(challengeResult(run).stars===3&&recordActivity(run,medals),'challenge is achievable at gold tier');
+ check(restoreRun(snapshotRun(run),medals).phase==='result','finished challenge restores');
+}
+const practice=newRun(0,'practice');
+playActivity(practice,{miss:true});
+recordActivity(practice,medals);
+check(medals.practice[0]>0&&medals.best[0]===123&&medals.unlocked===0,'practice and challenge records are independent of the circuit');
+check(contentStarts===10&&contentEnds===10,'only played jumps notify the SDK, including resumed pairs');
+activityHost.stop();
 console.log('PASS '+n+' gameplay, save and GameWave mock checks');
