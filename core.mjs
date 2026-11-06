@@ -1,7 +1,9 @@
 export const HILLS=[
  {name:'Pine Basin',code:'PB / 01',target:108,wind:0,time:3.6,window:.37,sky:0xc5e0ee,snow:0xe6f4ff,accent:0xbafde9},
  {name:'Rose Glacier',code:'RG / 02',target:147,wind:1.2,time:3.45,window:.30,sky:0xe0acc2,snow:0xf6ebff,accent:0xffce9d},
- {name:'Aurora Ridge',code:'AR / 03',target:184,wind:-1.9,time:3.3,window:.25,sky:0x7581bc,snow:0xcedcff,accent:0xc8dbff}
+ {name:'Aurora Ridge',code:'AR / 03',target:184,wind:-1.9,time:3.3,window:.25,sky:0x7581bc,snow:0xcedcff,accent:0xc8dbff},
+ {name:'Beacon Fjord',code:'BF / 04',target:188,wind:1.35,time:3.45,window:.30,sky:0x88b7c9,snow:0xd8eff1,accent:0xf2bb68,venue:'fjord',subtitle:'An icebound harbor and working lighthouse.'},
+ {name:'Lantern Village',code:'LV / 05',target:194,wind:-1.15,time:3.45,window:.29,sky:0x7d708f,snow:0xe6ddf0,accent:0xffc881,venue:'village',subtitle:'A dusk run above timber lodges and a moving cable car.'}
 ];
 export const CHALLENGES=[
  {id:'blue-line',name:'Blue Line',hill:0,jumps:1,band:[74,87],landing:.45,detail:'Land at 74–87 m. Tap in the gold zone for a shorter jump.'},
@@ -15,6 +17,7 @@ export const clamp=(x,a=0,b=1)=>Math.min(b,Math.max(a,x));
 export const challengeFor=run=>CHALLENGES.find(challenge=>challenge.id===run.activity);
 export const jumpLimit=run=>run.activity==='circuit'?2:challengeFor(run)?.jumps??1;
 export const available=(i,p)=>i===0||Boolean(p.medals[CHALLENGES[i-1]?.id]);
+export const practiceAvailable=(hill,p)=>Boolean(HILLS[hill]&&(hill<=p.unlocked||HILLS[hill].venue));
 export function ground(z){
  if(z<0){let t=clamp((z+36)/36);return 30-16*(1-Math.pow(1-t,1.42))-.39*Math.pow(t,12)}
  const q=Math.min(z,43), u=clamp((z-43)/19);
@@ -23,7 +26,10 @@ export function ground(z){
 export function profile(v={}){
  const medals={};
  for(const {id} of CHALLENGES)medals[id]=clamp(Math.floor(Number(v.medals?.[id])||0),0,3);
- return {unlocked:Number.isInteger(v.unlocked)?clamp(v.unlocked,0,2):0,best:HILLS.map((_,i)=>clamp(Number(v.best?.[i])||0,0,350)),practice:HILLS.map((_,i)=>clamp(Number(v.practice?.[i])||0,0,150)),medals,aurora:v.aurora===true,ember:v.ember===true,kit:['blue','rose','ice','aurora','ember','summit','gold'].includes(v.kit)?v.kit:'blue',sound:v.sound!==false}
+ const best=HILLS.map((_,i)=>clamp(Number(v.best?.[i])||0,0,350));
+ let unlocked=Number.isInteger(v.unlocked)?clamp(v.unlocked,0,HILLS.length-1):0;
+ if(unlocked===2&&best[2]>=HILLS[2].target)unlocked=3;
+ return {unlocked,best,practice:HILLS.map((_,i)=>clamp(Number(v.practice?.[i])||0,0,150)),medals,aurora:v.aurora===true,ember:v.ember===true,kit:['blue','rose','ice','aurora','ember','summit','gold'].includes(v.kit)?v.kit:'blue',sound:v.sound!==false}
 }
 export function newRun(hill=0,activity='circuit'){return {hill,activity,attempt:0,results:[],phase:'ready',t:0,take:0,land:0,mark:false,z:-35,x:0}}
 export function restoreRun(r,p){
@@ -31,7 +37,8 @@ export function restoreRun(r,p){
  const s=newRun(r.hill,r.activity??'circuit');
  const challenge=challengeFor(s);
  if(challenge){if(challenge.hill!==s.hill||!available(CHALLENGES.indexOf(challenge),p))return null}
- else if(!['circuit','practice'].includes(s.activity)||s.hill>p.unlocked)return null;
+ else if(s.activity==='practice'){if(!practiceAvailable(s.hill,p))return null}
+ else if(s.activity!=='circuit'||s.hill>p.unlocked)return null;
  const limit=jumpLimit(s);
  if(r.results.length>limit)return null;
  s.results=r.results.filter(v=>v&&[v.distance,v.style,v.points,v.take,v.land].every(Number.isFinite)).map(v=>({distance:clamp(v.distance,0,150),style:clamp(v.style,0,20),points:clamp(v.points,0,200),take:clamp(v.take),land:clamp(v.land)}));
@@ -85,7 +92,7 @@ export function total(r){return Math.round(r.results.reduce((s,v)=>s+v.points,0)
 export function settle(r,p){
  if(r.activity!=='circuit'||r.phase!=='result'||r.results.length!==2)return false;
  let t=total(r);p.best[r.hill]=Math.max(t,p.best[r.hill]);
- if(t>=HILLS[r.hill].target)p.unlocked=Math.max(p.unlocked,Math.min(2,r.hill+1));
+ if(t>=HILLS[r.hill].target)p.unlocked=Math.max(p.unlocked,Math.min(HILLS.length-1,r.hill+1));
  return t>=HILLS[r.hill].target;
 }
 export function challengeResult(run){

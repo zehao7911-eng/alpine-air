@@ -25,7 +25,9 @@ header .meet{min-width:0;overflow:hidden;text-overflow:ellipsis}
 </script><script>(()=>{const HILLS=[
  {name:'Pine Basin',code:'PB / 01',target:108,wind:0,time:3.6,window:.37,sky:0xc5e0ee,snow:0xe6f4ff,accent:0xbafde9},
  {name:'Rose Glacier',code:'RG / 02',target:147,wind:1.2,time:3.45,window:.30,sky:0xe0acc2,snow:0xf6ebff,accent:0xffce9d},
- {name:'Aurora Ridge',code:'AR / 03',target:184,wind:-1.9,time:3.3,window:.25,sky:0x7581bc,snow:0xcedcff,accent:0xc8dbff}
+ {name:'Aurora Ridge',code:'AR / 03',target:184,wind:-1.9,time:3.3,window:.25,sky:0x7581bc,snow:0xcedcff,accent:0xc8dbff},
+ {name:'Beacon Fjord',code:'BF / 04',target:188,wind:1.35,time:3.45,window:.30,sky:0x88b7c9,snow:0xd8eff1,accent:0xf2bb68,venue:'fjord',subtitle:'An icebound harbor and working lighthouse.'},
+ {name:'Lantern Village',code:'LV / 05',target:194,wind:-1.15,time:3.45,window:.29,sky:0x7d708f,snow:0xe6ddf0,accent:0xffc881,venue:'village',subtitle:'A dusk run above timber lodges and a moving cable car.'}
 ];
 const CHALLENGES=[
  {id:'blue-line',name:'Blue Line',hill:0,jumps:1,band:[74,87],landing:.45,detail:'Land at 74–87 m. Tap in the gold zone for a shorter jump.'},
@@ -39,6 +41,7 @@ const clamp=(x,a=0,b=1)=>Math.min(b,Math.max(a,x));
 const challengeFor=run=>CHALLENGES.find(challenge=>challenge.id===run.activity);
 const jumpLimit=run=>run.activity==='circuit'?2:challengeFor(run)?.jumps??1;
 const available=(i,p)=>i===0||Boolean(p.medals[CHALLENGES[i-1]?.id]);
+const practiceAvailable=(hill,p)=>Boolean(HILLS[hill]&&(hill<=p.unlocked||HILLS[hill].venue));
 function ground(z){
  if(z<0){let t=clamp((z+36)/36);return 30-16*(1-Math.pow(1-t,1.42))-.39*Math.pow(t,12)}
  const q=Math.min(z,43), u=clamp((z-43)/19);
@@ -47,7 +50,10 @@ function ground(z){
 function profile(v={}){
  const medals={};
  for(const {id} of CHALLENGES)medals[id]=clamp(Math.floor(Number(v.medals?.[id])||0),0,3);
- return {unlocked:Number.isInteger(v.unlocked)?clamp(v.unlocked,0,2):0,best:HILLS.map((_,i)=>clamp(Number(v.best?.[i])||0,0,350)),practice:HILLS.map((_,i)=>clamp(Number(v.practice?.[i])||0,0,150)),medals,aurora:v.aurora===true,ember:v.ember===true,kit:['blue','rose','ice','aurora','ember','summit','gold'].includes(v.kit)?v.kit:'blue',sound:v.sound!==false}
+ const best=HILLS.map((_,i)=>clamp(Number(v.best?.[i])||0,0,350));
+ let unlocked=Number.isInteger(v.unlocked)?clamp(v.unlocked,0,HILLS.length-1):0;
+ if(unlocked===2&&best[2]>=HILLS[2].target)unlocked=3;
+ return {unlocked,best,practice:HILLS.map((_,i)=>clamp(Number(v.practice?.[i])||0,0,150)),medals,aurora:v.aurora===true,ember:v.ember===true,kit:['blue','rose','ice','aurora','ember','summit','gold'].includes(v.kit)?v.kit:'blue',sound:v.sound!==false}
 }
 function newRun(hill=0,activity='circuit'){return {hill,activity,attempt:0,results:[],phase:'ready',t:0,take:0,land:0,mark:false,z:-35,x:0}}
 function restoreRun(r,p){
@@ -55,7 +61,8 @@ function restoreRun(r,p){
  const s=newRun(r.hill,r.activity??'circuit');
  const challenge=challengeFor(s);
  if(challenge){if(challenge.hill!==s.hill||!available(CHALLENGES.indexOf(challenge),p))return null}
- else if(!['circuit','practice'].includes(s.activity)||s.hill>p.unlocked)return null;
+ else if(s.activity==='practice'){if(!practiceAvailable(s.hill,p))return null}
+ else if(s.activity!=='circuit'||s.hill>p.unlocked)return null;
  const limit=jumpLimit(s);
  if(r.results.length>limit)return null;
  s.results=r.results.filter(v=>v&&[v.distance,v.style,v.points,v.take,v.land].every(Number.isFinite)).map(v=>({distance:clamp(v.distance,0,150),style:clamp(v.style,0,20),points:clamp(v.points,0,200),take:clamp(v.take),land:clamp(v.land)}));
@@ -109,7 +116,7 @@ function total(r){return Math.round(r.results.reduce((s,v)=>s+v.points,0)*10)/10
 function settle(r,p){
  if(r.activity!=='circuit'||r.phase!=='result'||r.results.length!==2)return false;
  let t=total(r);p.best[r.hill]=Math.max(t,p.best[r.hill]);
- if(t>=HILLS[r.hill].target)p.unlocked=Math.max(p.unlocked,Math.min(2,r.hill+1));
+ if(t>=HILLS[r.hill].target)p.unlocked=Math.max(p.unlocked,Math.min(HILLS.length-1,r.hill+1));
  return t>=HILLS[r.hill].target;
 }
 function challengeResult(run){
@@ -553,6 +560,156 @@ class AlpineAthlete {
   }
 }
 
+const VenueThree=window.THREE;
+const venueVector=(x,y,z)=>new VenueThree.Vector3(x,y,z);
+
+function buildVenue(view,parent,theme,shoulder,floor,random){
+ const site=new VenueThree.Group();
+ parent.add(site);
+ const box=(x,y,z,w,h,d,color)=>view.box(site,x,y,z,w,h,d,color);
+ const pole=(a,b,r,color)=>view.tube(site,venueVector(...a),venueVector(...b),r,color);
+ const group=(x,y,z)=>{
+  const object=new VenueThree.Group();
+  object.position.set(x,y,z);
+  site.add(object);
+  return object;
+ };
+ const part=(p,x,y,z,w,h,d,c)=>view.box(p,x,y,z,w,h,d,c);
+ const glow=(p,x,y,z,w,h,d,c)=>{
+  const object=part(p,x,y,z,w,h,d,c);
+  object.material=view.venueGlow(c);
+  return object;
+ };
+ const sign=(x,y,z,width,label)=>view.sign(site,x,y,z,width,.72,label);
+ function finishGate(label,frame,trim){
+  const z=64.6,y=ground(z);
+  for(const side of [-1,1]){
+   box(side*4.58,y+1.28,z,.24,3.35,.35,frame);
+   box(side*4.58,y+.22,z,.48,.44,.55,trim);
+  }
+  box(0,y+3.11,z,9.4,.31,.32,frame);
+  sign(0,y+2.81,z-.22,4.65,label);
+ }
+
+ function lodge(x,z,w,d,color,roof){
+  // A solid stone base bridges the grade under the long wall.
+  const foundation=Math.min(shoulder(x-w/2,z+d/2),shoulder(x+w/2,z+d/2))-.25;
+  const y=Math.max(shoulder(x-w/2,z-d/2),shoulder(x+w/2,z-d/2));
+  const house=group(x,y,z);
+  part(house,0,(foundation-y)/2-.04,0,w+.12,y-foundation+.10,d+.12,0x43566a);
+  part(house,0,.91,0,w,1.82,d,color);
+  for(const column of [-1,1]){
+   const roofPanel=part(house,column*w*.26,2.04,0,w*.64,.17,d+.39,roof);
+   roofPanel.rotation.z=-column*.43;
+   const trim=part(house,column*w*.26,2.11,0,w*.60,.075,d+.32,0xe2edf5);
+   trim.rotation.z=-column*.43;
+  }
+  for(const end of [-1,1]){
+   part(house,0,1.82,end*(d/2-.09),w,.16,.21,0x3a3046);
+   const wallZ=end*(d/2+.013);
+   part(house,0,.54,wallZ,.49,1.02,.075,0x352e41);
+   for(const side of [-1,1]){
+    part(house,side*w*.30,1.03,wallZ,.66,.63,.07,0x392e40);
+    glow(house,side*w*.30,1.03,wallZ+end*.05,.50,.48,.03,0xffc677);
+    part(house,side*w*.30,1.03,wallZ+end*.08,.045,.50,.021,0x70516a);
+   }
+  }
+  for(const side of [-1,1])for(const offset of [-.25,.25]){
+   const face=side*(w*.5+.023);
+   part(house,face,1.06,d*offset,.08,.62,.69,0x362e44);
+   glow(house,face+side*.049,1.06,d*offset,.026,.46,.51,0xffb966);
+  }
+  part(house,w*.24,2.43,d*.22,.31,1.04,.32,0x6e5763);
+  part(house,w*.24,2.96,d*.22,.41,.16,.42,0xe5eafa);
+ }
+
+ if(theme==='fjord'){
+  for(const side of [-1,1]){
+   const center=side*45;
+   box(center,floor+.025,70,58,.025,70,0x397b9a);
+   for(let i=0;i<26;i++){
+    const x=side*(19+random()*48),z=40+random()*56;
+    const floe=view.mesh(site,new VenueThree.CylinderGeometry(1,1,.08,5,1),i%3===0?0x8dbecf:0xb3d6df,x,floor+.053,z);
+    floe.scale.set(.8+random()*3,1,.45+random()*1.1);
+    floe.rotation.y=random()*Math.PI;
+   }
+  }
+  lodge(8.2,-16,3.4,4.8,0x3a7886,0x2c5269);
+  lodge(-8.4,16,3.2,4.0,0xa65244,0x344b63);
+  lodge(8.5,34,3.4,5,0x3b7789,0x2c5269);
+  const dockY=floor+.74;
+  box(-20,dockY,59,20,.37,3.5,0x796d68);
+  for(let i=0;i<9;i++){
+   box(-10-i*2.4,dockY-.53,57.6,.23,1.38,.24,0x3b4658);
+   box(-10-i*2.4,dockY+.55,57.7,.17,.82,.18,0xb38e69);
+  }
+  box(-23,dockY+.25,63,5.4,.72,2.1,0x213e58);
+  box(-23,dockY+.62,63,5.1,.28,2.0,0xb64e49);
+  box(-23.7,dockY+1.06,63,1.9,.85,1.6,0xe4e8e0);
+  box(-23.65,dockY+1.28,62.16,1.3,.36,.09,0x385f77);
+  pole([-23,dockY+1.45,63],[-23,dockY+3.6,63],.049,0x516079);
+  sign(-10,dockY+1.72,57.35,3.1,'FJORD DOCK');
+  finishGate('BEACON HARBOR',0x31576e,0xe2a969);
+  const tx=7.45,tz=58,base=shoulder(tx,tz);
+  view.mesh(site,new VenueThree.CylinderGeometry(1.74,2.30,.9,10),0x426a7a,tx,base+.18,tz);
+  for(let i=0;i<5;i++){
+   const bottom=1.35-i*.12;
+   view.mesh(site,new VenueThree.CylinderGeometry(bottom-.12,bottom,1.32,12,1,true),i%2?0xbd5f52:0xe0eceb,tx,base+1.04+i*1.32,tz);
+  }
+  view.mesh(site,new VenueThree.CylinderGeometry(1.34,1.05,.37,12),0x38556d,tx,base+7.06,tz);
+  const beacon=group(tx,base+7.65,tz);
+  glow(beacon,0,0,0,1.32,.85,1.30,0xffd690);
+  part(beacon,.70,0,0,.15,.78,.68,0xffe8ae);
+  for(let i=0;i<8;i++){
+   const a=i*Math.PI/4;
+   box(tx+Math.sin(a)*.83,base+7.64,tz+Math.cos(a)*.83,.09,1.14,.09,0x243d51);
+  }
+  view.mesh(site,new VenueThree.ConeGeometry(1.30,1.03,12),0x2e465b,tx,base+8.66,tz);
+  sign(tx,base+1.18,tz-1.40,2.8,'BEACON 04');
+  return (time,reduced)=>{beacon.rotation.y=reduced?0:time*.72};
+ }
+
+ for(const [x,z,w,d,c] of [
+  [-8.4,-28,4.4,5.6,0x915b55],[8.7,-18,4,5,0x665b78],
+  [-9.0,1,4.3,5.5,0x6d626f],[8.4,10,3.8,4.3,0x965d55],
+  [-8.6,29,4.3,5,0x69516b],[9.3,38,5.4,6,0x8d5455],
+  [-8.7,54,4.2,6,0x665675],[11.9,55,4.7,5.8,0x9b6159]
+ ])lodge(x,z,w,d,c,0x4d4761);
+
+ for(const side of [-1,1])for(const z of [-31,-21,-11,1,13,25,37,49,59]){
+  const x=side*5.15,y=shoulder(x,z);
+  box(x,y+.87,z,.10,1.90,.10,0x574156);
+  const lantern=group(x,y+1.88,z);
+  part(lantern,0,-.12,0,.31,.071,.30,0x573a51);
+  glow(lantern,0,0,0,.23,.24,.23,0xffc47f);
+  part(lantern,0,.14,0,.32,.072,.32,0x654155);
+ }
+ sign(-8.3,shoulder(-8.3,58)+1.30,57,3.45,'LANTERN LODGE');
+ finishGate('LANTERN SQUARE',0x5f415e,0xf7b875);
+ const railX=-8.4,start=[railX,shoulder(railX,-33)+7.6,-33],end=[railX,shoulder(railX,58)+6.4,58];
+ pole(start,end,.052,0x3e3b54);
+ for(const z of [-33,-5,23,58]){
+  const f=(z+33)/91,top=start[1]+(end[1]-start[1])*f,base=shoulder(railX,z);
+  pole([railX+.83,base-.2,z],[railX+.83,top,z],.16,0x424058);
+  pole([railX+.83,top,z],[railX-.22,top,z],.089,0x424058);
+ }
+ const cabin=group(...start);
+ part(cabin,0,-.31,0,.077,.66,.09,0x302d4a);
+ part(cabin,0,-1.05,0,1.46,1.12,1.34,0xaf5a56);
+ part(cabin,0,-1.64,0,1.48,.13,1.34,0x4a3e58);
+ for(const side of [-1,1]){
+  glow(cabin,side*.747,-.93,0,.038,.47,1.03,0xffbd76);
+  glow(cabin,0,-.93,side*.684,1.03,.47,.037,0xffcf93);
+ }
+ const moon=view.ball(site,-11,23,100,4.6,4.6,4.6,0xffd7aa);
+ moon.material=view.venueGlow(0xffd7aa);
+ return (time,reduced)=>{
+  const t=reduced?.44:.10+.80*(.5+.5*Math.sin(time*.29));
+  cabin.position.set(railX,start[1]+(end[1]-start[1])*t,start[2]+(end[2]-start[2])*t);
+  cabin.rotation.z=reduced?0:.07*Math.cos(time*.71);
+ };
+}
+
 const T=window.THREE;
 const V=(x,y,z)=>new T.Vector3(x,y,z);
 const mix=(a,b,t)=>a+(b-a)*t;
@@ -569,6 +726,11 @@ class AlpineView{
  }
  resize(){let {width:w,height:h}=this.el.getBoundingClientRect();if(!w||!h)return;this.c.aspect=w/h;this.c.updateProjectionMatrix();this.r.setPixelRatio(Math.min(devicePixelRatio||1,1.5));this.r.setSize(w,h,false)}
  m(color){if(!this.mat.has(color))this.mat.set(color,new T.MeshLambertMaterial({color}));return this.mat.get(color)}
+ venueGlow(color){
+  this.glowMaterials??=new Map();
+  if(!this.glowMaterials.has(color))this.glowMaterials.set(color,new T.MeshBasicMaterial({color}));
+  return this.glowMaterials.get(color);
+ }
  mesh(parent,geo,c,x,y,z){let a=new T.Mesh(geo,this.m(c));a.position.set(x,y,z);parent.add(a);return a}
  box(p,x,y,z,w,h,d,c){let m=this.mesh(p,this.boxGeo,c,x,y,z);m.scale.set(w,h,d);return m}
  ball(p,x,y,z,w,h,d,c){let m=this.mesh(p,this.ballGeo,c,x,y,z);m.scale.set(w,h,d);return m}
@@ -592,16 +754,20 @@ class AlpineView{
    geometries.forEach(geometry=>geometry.dispose());
    this.s.remove(this.map);
   }
-  const p=this.map=new T.Group(),h=HILLS[id];this.s.add(p);this.s.background=new T.Color(h.sky);this.s.fog=new T.FogExp2(h.sky,.0088);
+  const p=this.map=new T.Group(),h=HILLS[id];
+  const fjord=h.venue==='fjord',village=h.venue==='village';
+  const bankColor=[0xc7e0ee,0xe1d5e8,0x9db2dc,0xb0d4de,0xbcb5d2][id];
+  this.s.add(p);this.s.background=new T.Color(h.sky);this.s.fog=new T.FogExp2(h.sky,fjord?.0075:.0088);
   let seed=12393+id*77;let rand=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296};
   // The valley slab must sit below the lowest part of the runout.
   const valleyFloor=ground(67)-.22;
-  this.box(p,0,valleyFloor-4,37,380,8,315,0xaac8db);
-  for(let j=0;j<4;j++)for(let i=0;i<9;i++){
-   let x=(i-4)*25+(rand()-.5)*13,z=89+j*30+rand()*12,ht=15+rand()*22+j*5,rad=12+rand()*12;
+  this.box(p,0,valleyFloor-4,37,380,8,315,bankColor);
+  for(let j=0;j<(h.venue?3:4);j++)for(let i=0;i<9;i++){
+   if((fjord||village)&&i>=3&&i<=5&&j===0)continue;
+   let x=(i-4)*25+(rand()-.5)*13,z=(village?116:89)+j*30+rand()*12,ht=(village?9:15)+rand()*(village?14:22)+j*5,rad=12+rand()*12;
    // Rock and snow meet at a shared ring, with one surface on either side.
    const mountainBase=valleyFloor-.25;
-   const rock=this.mesh(p,new T.CylinderGeometry(rad*.47,rad,ht*.53,5,1,true),[0x7294b2,0x8eabc2,0x98b6cc,0xb3cbdc][j],x,mountainBase+ht*.265,z);
+   const rock=this.mesh(p,new T.CylinderGeometry(rad*.47,rad,ht*.53,5,1,true),(village?[0x615776,0x80728e,0x9a88a4]:[0x7294b2,0x8eabc2,0x98b6cc,0xb3cbdc])[j],x,mountainBase+ht*.265,z);
    const cap=this.mesh(p,new T.ConeGeometry(rad*.47,ht*.47,5,1,true),[0xe2eef5,0xd0e0ec,0xd6e5f0,0xdce9f3][j],x,mountainBase+ht*.765,z);
    rock.rotation.y=cap.rotation.y=rand();
   }
@@ -609,17 +775,20 @@ class AlpineView{
   for(let side of [-1,1]){
    const pts=[],ix=[],cols=13,rows=34;
    for(let j=0;j<=rows;j++)for(let i=0;i<=cols;i++){let x=side*(4.05+i*3),z=-44+j*3.75;pts.push(x,shoulder(x,z),z);if(j<rows&&i<cols){let k=j*(cols+1)+i,a=k+cols+1;ix.push(...(side>0?[k,a,k+1,k+1,a,a+1]:[k,k+1,a,k+1,a+1,a]))}}
-   const land=new T.BufferGeometry();land.setAttribute('position',new T.Float32BufferAttribute(pts,3));land.setIndex(ix);land.computeVertexNormals();this.mesh(p,land,[0xc7e0ee,0xe1d5e8,0x9db2dc][id],0,0,0);
+   const land=new T.BufferGeometry();land.setAttribute('position',new T.Float32BufferAttribute(pts,3));land.setIndex(ix);land.computeVertexNormals();this.mesh(p,land,bankColor,0,0,0);
   }
+  this.animateVenue=h.venue?buildVenue(this,p,h.venue,shoulder,valleyFloor,rand):null;
+  this.venueTime=0;
   const pineGeo=new T.CylinderGeometry(.42,1,.58,7,1,true).translate(0,-.21,0);
   const pineSnowGeo=new T.ConeGeometry(.42,.42,7,1,true).translate(0,.29,0);
+  const treeCount=fjord?17:village?34:73;
   const pineBatches=[0x28485d,0x3e6173,0x58788a,0xd7eaf5].map((color,i)=>{
-   const batch=new T.InstancedMesh(i===3?pineSnowGeo:pineGeo,this.m(color),i===3?219:73);
+   const batch=new T.InstancedMesh(i===3?pineSnowGeo:pineGeo,this.m(color),i===3?treeCount*3:treeCount);
    p.add(batch);
    return batch;
   });
   const transform=new T.Object3D();
-  for(let i=0;i<73;i++){let side=i%2?-1:1,x=side*(8.4+rand()*27),z=-38+rand()*116,scale=.65+rand()*1.20,y=shoulder(x,z)-.18;
+  for(let i=0;i<treeCount;i++){let side=i%2?-1:1,x=side*((h.venue?15:8.4)+rand()*(fjord?14:27)),z=-38+rand()*(fjord?72:116),scale=.65+rand()*1.20,y=shoulder(x,z)-.18;
    this.box(p,x,y+.5*scale,z,.25*scale,1.6*scale,.25*scale,0x6a6773);
    transform.rotation.y=i*1.47;
    for(let k=0;k<3;k++){
@@ -640,7 +809,7 @@ class AlpineView{
    this.strip(p,a-.054,a+.054,-36,0,id===2?0xb2c8e3:0xdceaf0,.028);
   }
   for(let a of [-2.93,-2.65,-2.37,2.37,2.65,2.93]){
-   this.strip(p,a-.012,a+.012,2,63,[0xc9dfed,0xdacee1,0xadc1e2][id],.016);
+   this.strip(p,a-.012,a+.012,2,63,bankColor,.016);
   }
   for(let side of [-1,1]){
    this.strip(p,side*3.35-.11,side*3.35+.11,-36,64,0x5886a5,.028);
@@ -665,7 +834,7 @@ class AlpineView{
   this.sign(p,0,ground(-36)+3.17,-35.8,5.25,1.13,h.name.toUpperCase()).rotation.y=0;
   this.flags=[];
   for(let side of [-1,1])for(let z of [8,23,39,54]){
-   let x=side*5.4,y=ground(z)-.16, clr=side>0?0xff7e70:0x51b0ca;
+   let x=side*5.4,y=ground(z)-.16, clr=h.venue?h.accent:side>0?0xff7e70:0x51b0ca;
    this.box(p,x,y+1.45,z,.10,3.1,.12,0x34546e);
    this.ball(p,x,y+3.02,z,.084,.083,.084,0xf2c779);
    const flag=new T.Group();
@@ -710,6 +879,8 @@ class AlpineView{
  }
  render(run,kit,mode,fx,reduced,dt=1/60){
   if(run.hill!==this.id)this.make(run.hill);
+  this.venueTime+=dt;
+  this.animateVenue?.(this.venueTime,reduced);
   let r=run, z=r.z, x=r.x, fly=r.phase==='flight', u=fly?clamp(r.t/flightTime(r)):0;
   const close=mode!=='race', intro=close||r.phase==='ready';
   if(intro){z=close?-27:-35;x=0}
@@ -742,7 +913,8 @@ class AlpineView{
    flag.rotation.y=.14*HILLS[r.hill].wind+(reduced?0:Math.sin(r.t*5+i*.83)*.20);
   });
   let ca=close?V(-4.60,g+3.68,z-3.1):V(x+1.9+(fly?.48*Math.sin(u*Math.PI):0),g+air+4.12,z-5.9);
-  let look=close?V(.03,g+.75,z+.17):V(x,g+air+.20,z+2.15);
+  const tourLift=HILLS[r.hill].venue&&fly?.55:0;
+  let look=close?V(.03,g+.75,z+.17):V(x,g+air+.20+tourLift,z+2.15);
   if(!close&&(r.phase==='result'||r.phase==='between')){ca=V(x-4.4,g+2.72,z+5.4);look=V(x,g+.75,z+.2)}
   if(!this.lastPhase||reduced||this.lastPhase==='result'&&r.phase==='ready'||intro&&this.lastPhase!=='ready'){this.cam.copy(ca);this.look.copy(look)}else{this.cam.lerp(ca,.12);this.look.lerp(look,.15)}
   if(Math.abs(this.cam.x)<4.1)this.cam.y=Math.max(this.cam.y,ground(this.cam.z)+1.15);
@@ -864,7 +1036,7 @@ function activityPanel(){
  const challenge=challengeFor(run);
  const name=challenge?.name??'Practice';
  const label='<small>'+name+' · '+HILLS[run.hill].name+'</small>';
- if(run.phase==='ready')return label+'<h2>At the gate</h2><p>'+(challenge?.detail??'Train your timing with slower cues. Every jump counts toward your practice best.')+'</p>'+button('Start descent','start');
+ if(run.phase==='ready')return label+'<h2>At the gate</h2><p>'+(challenge?.detail??HILLS[run.hill].subtitle??'Train your timing with slower cues. Every jump counts toward your practice best.')+'</p>'+button('Start descent','start');
  if(run.phase==='between')return label+'<h2>First mark</h2>'+marks(run)+'<p>Match your first jump to stay within '+challenge.gap+' m.</p>'+button('Next jump','second');
  if(run.phase!=='result')return '';
  if(!challenge)return label+'<h2>Practice mark</h2>'+marks(run)+'<p>Personal best · '+pf.practice[run.hill]+' m</p>'+button('Jump again','replay')+'<div class="row">'+button('Practice hills','practice','secondary','◭')+button('Home','home','secondary','←')+'</div>';
@@ -887,7 +1059,7 @@ function panel(){
    (run===side&&side.phase!=='result'?button('Resume '+(challengeFor(side)?.name??'practice'),'resume-side'):'')+
    button(circuit.phase==='result'?'View results':circuit.results.length?'Continue meet':'Enter meet','enter',run===side&&side.phase!=='result'?'choice':'primary')+
    '<div class="row">'+button('Challenges','challenges','secondary','◈')+button('Practice','practice','secondary','↻')+'</div>'+
-   '<div class="row">'+button('Hills','hills','secondary','◭')+button('Suits','kits','secondary','◇')+'</div>';
+   '<div class="row">'+button('Venues','hills','secondary','◭')+button('Suits','kits','secondary','◇')+'</div>';
  }
  else if(mode==='challenges'){
   html='<small>Alpine challenge board</small><h2>Challenges</h2><p>'+starTotal()+' / 18 stars · Clear a challenge to unlock the next.</p>'+
@@ -896,10 +1068,16 @@ function panel(){
  }
  else if(mode==='practice'){
   html='<small>Open training</small><h2>Practice</h2><p>One jump at a time. Slower timing cues and a personal best for each hill.</p>'+
-   HILLS.map((v,i)=>button(v.name,'practice-'+i,'choice',i>pf.unlocked?'LOCKED':pf.practice[i]?pf.practice[i]+' M':'→',i>pf.unlocked)).join('')+
+   HILLS.map((v,i)=>button(v.name,'practice-'+i,'choice',!practiceAvailable(i,pf)?'LOCKED':pf.practice[i]?pf.practice[i]+' M':v.venue?'NEW':'→',!practiceAvailable(i,pf))).join('')+
    '<div class="row">'+button('Back','home','secondary','←')+'</div>';
  }
- else if(mode==='hills'){html='<small>Alpine circuit</small><h2>Hills</h2>'+HILLS.map((v,i)=>button(v.name,'hill'+i,'choice',i>pf.unlocked?'LOCKED':pf.best[i]?pf.best[i].toFixed(1)+' PTS':'→',i>pf.unlocked)).join('')+'<div class="row">'+button('Back','home','secondary','←')+'</div>'}
+ else if(mode==='hills'){
+  html='<small>Alpine circuit</small><h2>Venues</h2><p>Tour the new venues now, or unlock their meets in the circuit.</p>'+
+   HILLS.map((v,i)=>{
+    const tour=v.venue&&i>pf.unlocked;
+    return button(v.name,tour?'practice-'+i:'hill'+i,'choice',tour?'EXPLORE':i>pf.unlocked?'LOCKED':pf.best[i]?pf.best[i].toFixed(1)+' PTS':'→',!tour&&i>pf.unlocked);
+   }).join('')+'<div class="row">'+button('Back','home','secondary','←')+'</div>';
+ }
  else if(mode==='kits'){html='<small>Equipment</small><h2>Ski suits</h2>'+Object.keys(names).filter(k=>!['aurora','ember'].includes(k)||support[k]||pf[k]).map(k=>button(names[k],'kit-'+k,'choice',pf.kit===k?'✓':owned(k)?'◇':k==='summit'?'4 STARS':k==='gold'?'12 STARS':'LOCKED',!owned(k))).join('');
   if(support.aurora&&!pf.aurora)html+='<p class="reward">Like this game in GameWave to unlock Aurora Violet.</p>';
   if(support.ember&&!pf.ember)html+='<p class="reward">Post a direct comment in GameWave to unlock Ember Orange.</p>';
@@ -907,9 +1085,9 @@ function panel(){
  }else if(run.activity!=='circuit'){html=activityPanel()}
  else if(run.phase==='ready'){html='<small>'+h.name+' · Jump '+(run.attempt+1)+' / 2</small><h2>At the gate</h2><p>Tap when the timing bar reaches mint. Two jumps to score '+h.target+' points.</p>'+button('Start descent','start')}
  else if(run.phase==='between'||run.phase==='result'){
-  const done=run.phase==='result',win=total(run)>=h.target;
-  html='<small>'+h.name+' · '+(done?'Meet results':'Jump 1 of 2')+'</small><h2>'+(done?(win?(run.hill===2?'Circuit champion':'Hill cleared'):'Try another meet'):'First mark')+'</h2>'+(win&&done?'<div class="medal" aria-hidden="true">✦</div>':'')+'<div class="scores">'+run.results.map((v,i)=>'<div class="score"><strong>'+v.distance+' m</strong><span>Style '+v.style.toFixed(1)+'</span><b>'+v.points.toFixed(1)+' pts</b></div>').join('')+'</div><p>'+total(run).toFixed(1)+' / '+h.target+' points'+(done&&win&&run.hill<2?' · '+HILLS[run.hill+1].name+' unlocked':'')+'</p>';
-  html+=done?(win&&run.hill<2?button('Next hill','next'):'')+'<div class="row">'+button('Jump again','replay',win&&run.hill<2?'secondary':'primary','↻')+button('Hills','hills','secondary','◭')+'</div>':button('Next jump','second');
+  const done=run.phase==='result',win=total(run)>=h.target,finalHill=run.hill===HILLS.length-1;
+  html='<small>'+h.name+' · '+(done?'Meet results':'Jump 1 of 2')+'</small><h2>'+(done?(win?(finalHill?'Circuit champion':'Hill cleared'):'Try another meet'):'First mark')+'</h2>'+(win&&done?'<div class="medal" aria-hidden="true">✦</div>':'')+marks(run)+'<p>'+total(run).toFixed(1)+' / '+h.target+' points'+(done&&win&&!finalHill?' · '+HILLS[run.hill+1].name+' unlocked':'')+'</p>';
+  html+=done?(win&&!finalHill?button('Next hill','next'):'')+'<div class="row">'+button('Jump again','replay',win&&!finalHill?'secondary':'primary','↻')+button('Venues','hills','secondary','◭')+'</div>':button('Next jump','second');
  }
  $('panel').innerHTML=html;
 }
@@ -938,9 +1116,9 @@ $('panel').addEventListener('click',ev=>{
   if(challenge&&available(i,pf))selectRun(side?.activity===challenge.id&&side.phase!=='result'?side:newRun(challenge.hill,challenge.id));
  }else if(id.startsWith('practice-')){
   const i=Number(id.slice(9));
-  if(HILLS[i]&&i<=pf.unlocked)selectRun(newRun(i,'practice'));
+  if(practiceAvailable(i,pf))selectRun(newRun(i,'practice'));
  }else if(id==='replay'){selectRun(newRun(run.hill,run.activity))}
- else if(id==='next'||/^hill[0-2]$/.test(id)){
+ else if(id==='next'||/^hill\d+$/.test(id)){
   const n=id==='next'?run.hill+1:Number(id.slice(4));
   if(n>pf.unlocked||n>=HILLS.length)return;
   selectRun(newRun(n))

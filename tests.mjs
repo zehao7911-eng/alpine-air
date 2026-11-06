@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {HILLS,newRun,profile,action,tick,flightTime,targetTake,targetLand,nextAttempt,settle,total,restoreRun,snapshotRun} from './core.mjs';
-import {CHALLENGES,available,jumpLimit,takeoffBand,challengeResult,recordActivity} from './core.mjs';
+import {CHALLENGES,practiceAvailable,available,jumpLimit,takeoffBand,challengeResult,recordActivity} from './core.mjs';
 import {AlpineHost} from './sdk.mjs';
 let n=0;const check=(v,msg)=>{assert.ok(v,msg);n++};
 const flush=()=>new Promise(r=>setImmediate(r));
@@ -13,7 +13,7 @@ function jump(r,good=true,st=()=>{},en=()=>{}){
  }
  check(phases.includes('flight')&&phases.includes('touchdown'),'physical phase progression');en();
 }
-let p=profile();for(let i=0;i<3;i++){
+let p=profile();for(let i=0;i<HILLS.length;i++){
  let r=newRun(i);jump(r);
  check(r.phase==='between'&&r.results.length===1,'exactly one recorded jump');
  let first=r.results[0];r=restoreRun(snapshotRun(r),p);
@@ -46,6 +46,9 @@ h.connect();h.start();h.end();h.save({game:'alpine-air',v:1});await flush();h.st
 const medals=profile({unlocked:0,best:[123]});
 check(restoreRun({hill:0,results:[]},medals).activity==='circuit','existing circuit snapshot still loads');
 check(!available(1,medals),'challenge two starts locked');
+check(profile({unlocked:2,best:[120,150,185]}).unlocked===3,'existing Aurora champions can enter the fjord meet');
+check(practiceAvailable(4,medals)&&restoreRun(snapshotRun(newRun(4,'practice')),medals)?.hill===4,'new venues are open for practice and restore on a new profile');
+check(!restoreRun(snapshotRun(newRun(4)),medals),'touring a venue does not unlock its circuit meet');
 let contentStarts=0,contentEnds=0;
 const activityHost=new AlpineHost(env({gameStart(){contentStarts++},gameOver(){contentEnds++}}));
 activityHost.connect();
@@ -86,3 +89,4 @@ check(medals.practice[0]>0&&medals.best[0]===123&&medals.unlocked===0,'practice 
 check(contentStarts===10&&contentEnds===10,'only played jumps notify the SDK, including resumed pairs');
 activityHost.stop();
 console.log('PASS '+n+' gameplay, save and GameWave mock checks');
+
