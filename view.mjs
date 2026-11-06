@@ -41,15 +41,18 @@ export class AlpineView{
   }
   const p=this.map=new T.Group(),h=HILLS[id];this.s.add(p);this.s.background=new T.Color(h.sky);this.s.fog=new T.FogExp2(h.sky,.0088);
   let seed=12393+id*77;let rand=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296};
-  this.box(p,0,-12,37,380,8,315,0xaac8db);
+  // The valley slab must sit below the lowest part of the runout.
+  const valleyFloor=ground(67)-.22;
+  this.box(p,0,valleyFloor-4,37,380,8,315,0xaac8db);
   for(let j=0;j<4;j++)for(let i=0;i<9;i++){
    let x=(i-4)*25+(rand()-.5)*13,z=89+j*30+rand()*12,ht=15+rand()*22+j*5,rad=12+rand()*12;
    // Rock and snow meet at a shared ring, with one surface on either side.
-   const rock=this.mesh(p,new T.CylinderGeometry(rad*.47,rad,ht*.53,5,1,true),[0x7294b2,0x8eabc2,0x98b6cc,0xb3cbdc][j],x,-9+ht*.265,z);
-   const cap=this.mesh(p,new T.ConeGeometry(rad*.47,ht*.47,5,1,true),[0xe2eef5,0xd0e0ec,0xd6e5f0,0xdce9f3][j],x,-9+ht*.765,z);
+   const mountainBase=valleyFloor-.25;
+   const rock=this.mesh(p,new T.CylinderGeometry(rad*.47,rad,ht*.53,5,1,true),[0x7294b2,0x8eabc2,0x98b6cc,0xb3cbdc][j],x,mountainBase+ht*.265,z);
+   const cap=this.mesh(p,new T.ConeGeometry(rad*.47,ht*.47,5,1,true),[0xe2eef5,0xd0e0ec,0xd6e5f0,0xdce9f3][j],x,mountainBase+ht*.765,z);
    rock.rotation.y=cap.rotation.y=rand();
   }
-  const shoulder=(x,z)=>Math.max(-8,ground(z)-.06-(Math.abs(x)-4.05)*(.39+.10*Math.sin(z*.07)));
+  const shoulder=(x,z)=>Math.max(valleyFloor,ground(z)-.06-(Math.abs(x)-4.05)*(.39+.10*Math.sin(z*.07)));
   for(let side of [-1,1]){
    const pts=[],ix=[],cols=13,rows=34;
    for(let j=0;j<=rows;j++)for(let i=0;i<=cols;i++){let x=side*(4.05+i*3),z=-44+j*3.75;pts.push(x,shoulder(x,z),z);if(j<rows&&i<cols){let k=j*(cols+1)+i,a=k+cols+1;ix.push(...(side>0?[k,a,k+1,k+1,a,a+1]:[k,k+1,a,k+1,a+1,a]))}}

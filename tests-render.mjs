@@ -8,32 +8,45 @@ globalThis.window = {THREE};
 const ctx = {
   fillRect(){}, fillText(){}, setLineDash(){}, strokeRect(){}, beginPath(){},
   moveTo(){}, lineTo(){}, fill(){}, save(){}, translate(){}, rotate(){}, restore(){},
-  createLinearGradient(){return {addColorStop(){}}}
+  createLinearGradient(){return {addColorStop(){}}},
+  createRadialGradient(){return {addColorStop(){}}}
 };
 globalThis.document = {createElement:()=>({getContext:()=>ctx})};
-const {AlpineAthlete} = await import('./athlete.mjs');
 const {AlpineView} = await import('./view.mjs');
 
 const point = new THREE.Vector3();
-const root = new THREE.Group();
-const view = {
-  boxGeo: new THREE.BoxGeometry(), hero: root, marker: new THREE.Mesh(new THREE.PlaneGeometry()),
-  shad: new THREE.Object3D(), cam: new THREE.Vector3(), look: new THREE.Vector3(),
-  flags: [], c: new THREE.PerspectiveCamera(), r: {render(){}}, drawSnow(){}
-};
-view.shad.material = {};
-view.athlete = new AlpineAthlete(view,root);
+const direction = new THREE.Vector3();
+const ray = new THREE.Raycaster();
+const view = Object.assign(Object.create(AlpineView.prototype), {
+  s: new THREE.Scene(), mat: new Map(), boxGeo: new THREE.BoxGeometry(),
+  ballGeo: new THREE.SphereGeometry(1,14,10), cam: new THREE.Vector3(),
+  look: new THREE.Vector3(), c: new THREE.PerspectiveCamera(), r: {render(){}}
+});
 let frames = 0;
 let minSole = Infinity;
 let minGap = Infinity;
 const phases = new Set();
 
 function verifyFrame(run, mode, dt, reduced) {
-  view.id = run.hill;
-  AlpineView.prototype.render.call(view,run,'blue',mode,null,reduced,dt);
-  root.updateMatrixWorld(true);
+  view.render(run,'blue',mode,null,reduced,dt);
+  view.s.updateMatrixWorld(true);
   phases.add(run.phase);
   frames++;
+  const sceneGeometry = view.map.children.filter(mesh =>
+    mesh.visible && mesh !== view.hero && mesh !== view.shad && mesh !== view.flakes);
+  const anchors = [
+    [view.athlete.head,.37,0],
+    [view.athlete.torso,.35,0],
+    ...view.athlete.limbs.flatMap(({ski})=>[[ski,.06,-.73],[ski,.06,.72]])
+  ];
+  for (const [anchor,y,z] of anchors) {
+    point.set(0,y,z).applyMatrix4(anchor.matrixWorld);
+    direction.subVectors(point,view.cam);
+    ray.far=direction.length()-.04;
+    ray.set(view.cam,direction.normalize());
+    assert.equal(ray.intersectObjects(sceneGeometry,true).length,0,
+      'Venue geometry hid the skier at hill '+(run.hill+1)+' / '+run.phase+' / z='+run.z.toFixed(2));
+  }
   for (const {side,ski} of view.athlete.limbs) {
     const vertices = ski.children[0].geometry.attributes.position;
     for (let i = 0; i < vertices.count; i++) {
@@ -41,9 +54,9 @@ function verifyFrame(run, mode, dt, reduced) {
       const centerGap = side * point.x;
       assert.ok(centerGap > .02, 'Ski entered the other ski’s lane');
       minGap = Math.min(minGap, centerGap);
-      point.applyMatrix4(root.matrixWorld);
+      point.applyMatrix4(view.hero.matrixWorld);
       const clearance = point.y - ground(point.z);
-      assert.ok(clearance > .050, 'Ski crossed the rendered track');
+      assert.ok(clearance > .050, 'Ski crossed the course height profile');
       minSole = Math.min(minSole, clearance);
     }
   }
@@ -70,5 +83,5 @@ for (let hill = 0; hill < HILLS.length; hill++) {
   }
 }
 assert.deepEqual([...phases],['ready','inrun','flight','brake','between']);
-console.log('PASS '+frames+' posed frames. Minimum ski separation '+(minGap*2).toFixed(3)+
+console.log('PASS '+frames+' frames against the actual venue mesh. Minimum ski separation '+(minGap*2).toFixed(3)+
   ' and minimum snow clearance '+minSole.toFixed(3)+' world units.');
