@@ -115,15 +115,16 @@ function lensTexture() {
   });
 }
 
+const skiSections = [
+  [-1.30, .071, .018], [-1.14, .081, 0], [-.43, .071, 0],
+  [.20, .069, 0], [.94, .082, 0], [1.23, .082, .026],
+  [1.43, .060, .100], [1.54, .022, .158], [1.57, .003, .161]
+];
+
 function skiShape() {
-  const sections = [
-    [-1.30, .071, .018], [-1.14, .081, 0], [-.43, .071, 0],
-    [.20, .069, 0], [.94, .082, 0], [1.23, .082, .026],
-    [1.43, .060, .100], [1.54, .022, .158], [1.57, .003, .161]
-  ];
   const positions = [], indices = [], uv = [];
-  for (let i = 0; i < sections.length; i++) {
-    const [z, width, y] = sections[i];
+  for (let i = 0; i < skiSections.length; i++) {
+    const [z, width, y] = skiSections[i];
     positions.push(-width, y, z, width, y, z, -width, y - .033, z, width, y - .033, z);
     const v = (z + 1.30) / 2.87;
     uv.push(0,v,1,v,0,v,1,v);
@@ -141,7 +142,7 @@ const poses = {
   ready: [1.03, -.07, .05, 0, 0, .13, -.17, .05, -.38, .06],
   tuck: [.73, -.20, 1.03, 0, 0, .12, -.27, .07, -.39, .11],
   launch: [1.01, -.04, .49, .06, 0, .15, -.19, -.05, -.37, -.14],
-  glide: [.94, -.13, 1.19, .32, 0, .09, -.22, .02, -.45, .02],
+  glide: [.94, -.13, 1.19, .24, 0, .09, -.22, .02, -.45, .02],
   prepare: [.93, -.09, .61, .04, .28, .23, -.22, .14, -.34, .27],
   absorb: [.72, -.13, .64, 0, .38, .22, -.24, .17, -.35, .37],
   skid: [.68, -.20, .85, .11, .11, .21, -.21, .04, -.30, .29],
@@ -167,6 +168,7 @@ export class AlpineAthlete {
     this.buildLimbs();
     this.current = poses.ready.slice();
     this.scratch = Array.from({length: 7}, () => new Three.Vector3());
+    this.solePoint = new Three.Vector3();
     this.animationTarget = new Array(poses.ready.length);
   }
 
@@ -320,6 +322,11 @@ export class AlpineAthlete {
     const blend = reduced ? 1 : 1 - Math.exp(-dt * 16);
     for (let i = 0; i < target.length; i++) this.current[i] += (target[i] - this.current[i]) * blend;
     const [height, hipZ, pitch, spread, stagger, armOut, elbowY, elbowZ, handY, handZ] = this.current;
+    // Outward yaw swings the tails inward. Keep the whole ski on its side of
+    // the stance centerline, including during the transition to a telemark.
+    const tailReach = Math.max(...skiSections.map(([z,width]) =>
+      width * Math.cos(spread) - z * Math.sin(spread)));
+    const stance = Math.max(.177, tailReach + .024);
     this.torso.position.set(0,height,hipZ);
     this.torso.rotation.x = pitch;
     this.torso.updateMatrix();
@@ -335,7 +342,7 @@ export class AlpineAthlete {
 
     for (const limb of this.limbs) {
       const side = limb.side;
-      limb.ski.position.set(side * (.177 + spread * .11),.043,side * stagger);
+      limb.ski.position.set(side * stance,.043,side * stagger);
       limb.ski.rotation.y = side * spread;
       limb.ski.updateMatrix();
       hip.set(side*.143,-.037,0).applyMatrix4(this.torso.matrix);
@@ -357,6 +364,31 @@ export class AlpineAthlete {
       limb.cuff.position.copy(hand).lerp(elbow,.18);
       limb.cuff.quaternion.copy(limb.fore.quaternion);
     }
+  }
+
+  clearSnow(surfaceHeight) {
+    this.root.updateMatrix();
+    let lift = 0;
+    const point = this.solePoint;
+    for (const {ski} of this.limbs) {
+      for (const edge of [-1, 1]) {
+        for (let i = 1; i < skiSections.length; i++) {
+          const [fromZ, fromWidth, fromY] = skiSections[i-1];
+          const [toZ, toWidth, toY] = skiSections[i];
+          // Checking points between vertices also catches the crest under a long board.
+          for (let step = i === 1 ? 0 : 1; step <= 4; step++) {
+            const t = step / 4;
+            point.set(
+              edge * Three.MathUtils.lerp(fromWidth,toWidth,t),
+              Three.MathUtils.lerp(fromY,toY,t)-.033,
+              Three.MathUtils.lerp(fromZ,toZ,t)
+            ).applyMatrix4(ski.matrix).applyMatrix4(this.root.matrix);
+            lift = Math.max(lift, surfaceHeight(point.z) - point.y);
+          }
+        }
+      }
+    }
+    this.root.position.y += lift;
   }
 
   setKit(kit) {

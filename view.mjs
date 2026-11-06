@@ -3,6 +3,7 @@ import {AlpineAthlete} from './athlete.mjs';
 const T=window.THREE;
 const V=(x,y,z)=>new T.Vector3(x,y,z);
 const mix=(a,b,t)=>a+(b-a)*t;
+const snowClearance=z=>ground(z)+.057;
 export class AlpineView{
  constructor(el){
   this.el=el;this.s=new T.Scene();this.c=new T.PerspectiveCamera(51,1,.1,280);
@@ -43,8 +44,10 @@ export class AlpineView{
   this.box(p,0,-12,37,380,8,315,0xaac8db);
   for(let j=0;j<4;j++)for(let i=0;i<9;i++){
    let x=(i-4)*25+(rand()-.5)*13,z=89+j*30+rand()*12,ht=15+rand()*22+j*5,rad=12+rand()*12;
-   let mountain=this.mesh(p,new T.ConeGeometry(rad,ht,5),[0x7294b2,0x8eabc2,0x98b6cc,0xb3cbdc][j],x,-9+ht/2,z);mountain.rotation.y=rand();
-   let cap=this.mesh(p,new T.ConeGeometry(rad*.47,ht*.47,5),[0xe2eef5,0xd0e0ec,0xd6e5f0,0xdce9f3][j],x,-9+ht*.765,z);cap.rotation.y=mountain.rotation.y;
+   // Rock and snow meet at a shared ring, with one surface on either side.
+   const rock=this.mesh(p,new T.CylinderGeometry(rad*.47,rad,ht*.53,5,1,true),[0x7294b2,0x8eabc2,0x98b6cc,0xb3cbdc][j],x,-9+ht*.265,z);
+   const cap=this.mesh(p,new T.ConeGeometry(rad*.47,ht*.47,5,1,true),[0xe2eef5,0xd0e0ec,0xd6e5f0,0xdce9f3][j],x,-9+ht*.765,z);
+   rock.rotation.y=cap.rotation.y=rand();
   }
   const shoulder=(x,z)=>Math.max(-8,ground(z)-.06-(Math.abs(x)-4.05)*(.39+.10*Math.sin(z*.07)));
   for(let side of [-1,1]){
@@ -52,9 +55,10 @@ export class AlpineView{
    for(let j=0;j<=rows;j++)for(let i=0;i<=cols;i++){let x=side*(4.05+i*3),z=-44+j*3.75;pts.push(x,shoulder(x,z),z);if(j<rows&&i<cols){let k=j*(cols+1)+i,a=k+cols+1;ix.push(...(side>0?[k,a,k+1,k+1,a,a+1]:[k,k+1,a,k+1,a+1,a]))}}
    const land=new T.BufferGeometry();land.setAttribute('position',new T.Float32BufferAttribute(pts,3));land.setIndex(ix);land.computeVertexNormals();this.mesh(p,land,[0xc7e0ee,0xe1d5e8,0x9db2dc][id],0,0,0);
   }
-  const pineGeo=new T.ConeGeometry(1,1,7);
+  const pineGeo=new T.CylinderGeometry(.42,1,.58,7,1,true).translate(0,-.21,0);
+  const pineSnowGeo=new T.ConeGeometry(.42,.42,7,1,true).translate(0,.29,0);
   const pineBatches=[0x28485d,0x3e6173,0x58788a,0xd7eaf5].map((color,i)=>{
-   const batch=new T.InstancedMesh(pineGeo,this.m(color),i===3?219:73);
+   const batch=new T.InstancedMesh(i===3?pineSnowGeo:pineGeo,this.m(color),i===3?219:73);
    p.add(batch);
    return batch;
   });
@@ -63,14 +67,11 @@ export class AlpineView{
    this.box(p,x,y+.5*scale,z,.25*scale,1.6*scale,.25*scale,0x6a6773);
    transform.rotation.y=i*1.47;
    for(let k=0;k<3;k++){
-    const branch=(1.10-.18*k)*scale, cap=(.69-.11*k)*scale;
+    const branch=(1.10-.18*k)*scale;
     transform.position.set(x,y+(1.35+k*.7)*scale,z);
     transform.scale.set(branch,1.8*scale,branch);
     transform.updateMatrix();
     pineBatches[k].setMatrixAt(i,transform.matrix);
-    transform.position.y=y+(1.68+k*.7)*scale;
-    transform.scale.set(cap,1.10*scale,cap);
-    transform.updateMatrix();
     pineBatches[3].setMatrixAt(i*3+k,transform.matrix);
    }
   }
@@ -97,7 +98,8 @@ export class AlpineView{
   this.strip(p,-3.4,3.4,-2.08,-.88,0x5bd9ae,.042);
   this.strip(p,-3.43,3.43,-.32,-.04,0x1c6080,.043);
   this.marker=this.strip(p,-3.35,3.35,26,28,0x67eab7,.048);
-  this.box(p,0,ground(-36)-.52,-36,9,1,3.8,0x2c506a);
+  this.strip(p,-4.05,4.05,-38,-36,h.snow,.001);
+  this.box(p,0,ground(-34.1)-.62,-36,9,1,3.8,0x2c506a);
   this.box(p,0,ground(-36)+3.65,-36,8.9,.23,.28,0x13364e);
   for(let x of [-3.9,3.9]){this.box(p,x,ground(-36)+1.7,-36,.31,3.6,.34,0x194660);this.box(p,x,ground(-36)-4.2,-36,.48,8,.48,0x3a5871)}
   this.sign(p,0,ground(-36)+3.17,-35.8,5.25,1.13,h.name.toUpperCase()).rotation.y=0;
@@ -151,9 +153,13 @@ export class AlpineView{
   let r=run, z=r.z, x=r.x, fly=r.phase==='flight', u=fly?clamp(r.t/flightTime(r)):0, intro=mode==='home'||mode==='hills'||mode==='kits'||r.phase==='ready';
   let close=mode==='home'||mode==='hills'||mode==='kits';
   if(intro){z=close?-27:-35;x=0}
-  const g=ground(z),slope=Math.atan2(ground(z+.12)-g,.12),air=fly?Math.sin(u*Math.PI)*(2.55+1.05*r.take):0;
-  this.hero.position.set(x,g+.055+air,z);this.hero.rotation.x=-slope+(fly?-.18*Math.sin(u*Math.PI):0);this.hero.rotation.y=close?-1.83:0;
+  const g=ground(z),slope=Math.atan2(ground(z+.85)-ground(z-.85),1.70);
+  const air=fly?Math.sin(u*Math.PI)*(2.55+1.05*r.take):0;
+  this.hero.position.set(x,g+.045+air,z);
+  this.hero.rotation.x=-slope+(fly?-.18*Math.sin(u*Math.PI):0);
+  this.hero.rotation.y=close?-1.83:0;
   this.athlete.pose(run,intro,dt,reduced);
+  this.athlete.clearSnow(snowClearance);
   this.athlete.setKit(kit);
   this.shad.position.set(x,g+.043,z);
   this.shad.rotation.x=-slope;
@@ -168,6 +174,7 @@ export class AlpineView{
   let look=close?V(.03,g+.75,z+.17):V(x,g+air+.20,z+2.15);
   if(!close&&(r.phase==='result'||r.phase==='between')){ca=V(x-4.4,g+2.72,z+5.4);look=V(x,g+.75,z+.2)}
   if(!this.lastPhase||reduced||this.lastPhase==='result'&&r.phase==='ready'||intro&&this.lastPhase!=='ready'){this.cam.copy(ca);this.look.copy(look)}else{this.cam.lerp(ca,.12);this.look.lerp(look,.15)}
+  if(Math.abs(this.cam.x)<4.1)this.cam.y=Math.max(this.cam.y,ground(this.cam.z)+1.15);
   this.lastPhase=r.phase;this.c.position.copy(this.cam);this.c.lookAt(this.look);this.r.render(this.s,this.c);
  }
 
