@@ -89,7 +89,7 @@ export function buildVenue(view,parent,theme,shoulder,floor,random){
   pole([-23,dockY+1.45,63],[-23,dockY+3.6,63],.049,0x516079);
   sign(-10,dockY+1.72,57.35,3.1,'FJORD DOCK');
   finishGate('BEACON HARBOR',0x31576e,0xe2a969);
-  const tx=7.45,tz=58,base=shoulder(tx,tz);
+  const tx=-7.55,tz=60,base=shoulder(tx,tz);
   view.mesh(site,new VenueThree.CylinderGeometry(1.74,2.30,.9,10),0x426a7a,tx,base+.18,tz);
   for(let i=0;i<5;i++){
    const bottom=1.35-i*.12;
