@@ -13,6 +13,12 @@ export const CHALLENGES=[
  {id:'ridge-reach',name:'Ridge Reach',hill:2,jumps:1,min:104,landing:.66,detail:'Reach 104 m and land with control on Aurora Ridge.'},
  {id:'north-star',name:'North Star',hill:2,jumps:2,min:99,gap:7,landing:.75,detail:'Land two jumps of at least 99 m, within 7 m of each other.'}
 ];
+export const RIDES=[
+ {id:'skis',name:'Classic Skis',tag:'Original'},
+ {id:'tub',name:'Tub Launcher',tag:'Bath time'},
+ {id:'cart',name:'Cart of Duty',tag:'Aisle nine'},
+ {id:'duck',name:'Quack Attack',tag:'Unlicensed'}
+];
 export const clamp=(x,a=0,b=1)=>Math.min(b,Math.max(a,x));
 export const challengeFor=run=>CHALLENGES.find(challenge=>challenge.id===run.activity);
 export const jumpLimit=run=>run.activity==='circuit'?2:challengeFor(run)?.jumps??1;
@@ -29,7 +35,7 @@ export function profile(v={}){
  const best=HILLS.map((_,i)=>clamp(Number(v.best?.[i])||0,0,350));
  let unlocked=Number.isInteger(v.unlocked)?clamp(v.unlocked,0,HILLS.length-1):0;
  if(unlocked===2&&best[2]>=HILLS[2].target)unlocked=3;
- return {unlocked,best,practice:HILLS.map((_,i)=>clamp(Number(v.practice?.[i])||0,0,150)),medals,aurora:v.aurora===true,ember:v.ember===true,kit:['blue','rose','ice','aurora','ember','summit','gold'].includes(v.kit)?v.kit:'blue',sound:v.sound!==false}
+ return {unlocked,best,practice:HILLS.map((_,i)=>clamp(Number(v.practice?.[i])||0,0,150)),medals,aurora:v.aurora===true,ember:v.ember===true,kit:['blue','rose','ice','aurora','ember','summit','gold'].includes(v.kit)?v.kit:'blue',sound:v.sound!==false,music:typeof v.music==='boolean'?v.music:v.sound!==false,ride:RIDES.some(ride=>ride.id===v.ride)?v.ride:'skis'}
 }
 export function newRun(hill=0,activity='circuit'){return {hill,activity,attempt:0,results:[],phase:'ready',t:0,take:0,land:0,mark:false,z:-35,x:0}}
 export function restoreRun(r,p){

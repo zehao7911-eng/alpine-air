@@ -27,8 +27,8 @@ let minSole = Infinity;
 let minGap = Infinity;
 const phases = new Set();
 
-function verifyFrame(run, mode, dt, reduced) {
-  view.render(run,'blue',mode,null,reduced,dt);
+function verifyFrame(run, mode, dt, reduced,ride='skis') {
+  view.render(run,'blue',mode,null,reduced,dt,ride);
   view.s.updateMatrixWorld(true);
   phases.add(run.phase);
   frames++;
@@ -61,6 +61,18 @@ function verifyFrame(run, mode, dt, reduced) {
     }
   }
   if (Math.abs(view.cam.x)<4.1) assert.ok(view.cam.y>=ground(view.cam.z)+1.15);
+  if(ride!=='skis'){
+    const sled=view.athlete.rides.get(ride).root;
+    assert.ok(sled.visible);
+    sled.traverse(mesh=>{
+      if(!mesh.isMesh)return;
+      const vertices=mesh.geometry.attributes.position;
+      for(let i=0;i<vertices.count;i+=2){
+        point.fromBufferAttribute(vertices,i).applyMatrix4(mesh.matrixWorld);
+        assert.ok(point.y>ground(point.z)+.04,ride+' hardware entered the snow');
+      }
+    });
+  }
 }
 
 for (let hill = 0; hill < HILLS.length; hill++) {
@@ -96,5 +108,16 @@ for (const challenge of CHALLENGES.filter(challenge=>challenge.band)) {
   }
 }
 assert.deepEqual([...phases],['ready','inrun','flight','brake','between','result']);
+for(const ride of ['tub','cart','duck']){
+  const run=newRun(4,'practice');
+  verifyFrame(run,'garage',1/30,false,ride);
+  action(run);
+  while(['inrun','flight','brake'].includes(run.phase)){
+    if(run.phase==='inrun'&&run.t>=targetTake(run)&&!run.mark)action(run);
+    if(run.phase==='flight'&&run.t>=targetLand(run)&&!run.mark)action(run);
+    tick(run,1/30);
+    verifyFrame(run,'race',1/30,false,ride);
+  }
+}
 console.log('PASS '+frames+' frames against the actual venue mesh. Minimum ski separation '+(minGap*2).toFixed(3)+
   ' and minimum snow clearance '+minSole.toFixed(3)+' world units.');

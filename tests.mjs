@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {HILLS,newRun,profile,action,tick,flightTime,targetTake,targetLand,nextAttempt,settle,total,restoreRun,snapshotRun} from './core.mjs';
 import {CHALLENGES,practiceAvailable,available,jumpLimit,takeoffBand,challengeResult,recordActivity} from './core.mjs';
 import {AlpineHost} from './sdk.mjs';
+import {SledMusic} from './music.mjs';
 let n=0;const check=(v,msg)=>{assert.ok(v,msg);n++};
 const flush=()=>new Promise(r=>setImmediate(r));
 function jump(r,good=true,st=()=>{},en=()=>{}){
@@ -88,5 +89,22 @@ recordActivity(practice,medals);
 check(medals.practice[0]>0&&medals.best[0]===123&&medals.unlocked===0,'practice and challenge records are independent of the circuit');
 check(contentStarts===10&&contentEnds===10,'only played jumps notify the SDK, including resumed pairs');
 activityHost.stop();
-console.log('PASS '+n+' gameplay, save and GameWave mock checks');
+check(profile({ride:'duck',music:false}).ride==='duck'&&!profile({ride:'duck',music:false}).music,'ride and audio selection restore');
+check(profile({sound:false}).ride==='skis'&&!profile({sound:false}).music,'previous muted saves stay quiet');
+const audioEvents=[];
+const param={setValueAtTime(){},exponentialRampToValueAtTime(){},setTargetAtTime(value){audioEvents.push(value)}};
+const audio={currentTime:0,state:'suspended',destination:{},createGain:()=>({gain:{...param},connect(){}}),
+ createOscillator:()=>({frequency:param,connect(){},start(){audioEvents.push('note')},stop(){}})};
+const song=new SledMusic(audio);
+song.update(true);
+check(!audioEvents.length,'music waits for browser audio unlock');
+audio.state='running';
+song.update(true);
+check(audioEvents.includes('note'),'music schedules playback during a jump');
+song.update(false);
+const stopped=audioEvents.length;
+audio.currentTime=3;
+song.update(false);
+check(audioEvents.at(-1)===0&&audioEvents.length===stopped,'pausing silences music and stops scheduling');
+console.log('PASS '+n+' gameplay, save, audio and GameWave mock checks');
 

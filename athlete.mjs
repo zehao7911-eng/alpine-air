@@ -1,4 +1,5 @@
 import {clamp, flightTime} from './core.mjs';
+import {makeRide} from './rides.mjs';
 
 const Three = window.THREE;
 const up = new Three.Vector3(0, 1, 0);
@@ -172,6 +173,9 @@ export class AlpineAthlete {
     this.scratch = Array.from({length: 7}, () => new Three.Vector3());
     this.solePoint = new Three.Vector3();
     this.animationTarget = new Array(poses.ready.length);
+    this.rides=new Map();
+    this.ride='skis';
+    this.wheelSpin=0;
   }
 
   mesh(parent, geometry, material, x = 0, y = 0, z = 0) {
@@ -323,7 +327,9 @@ export class AlpineAthlete {
     }
     const blend = reduced ? 1 : 1 - Math.exp(-dt * 16);
     for (let i = 0; i < target.length; i++) this.current[i] += (target[i] - this.current[i]) * blend;
-    const [height, hipZ, pitch, spread, stagger, armOut, elbowY, elbowZ, handY, handZ] = this.current;
+    const [height, hipZ, pitch, skiSpread, skiStagger, armOut, elbowY, elbowZ, handY, handZ] = this.current;
+    const spread=this.ride==='skis'?skiSpread:0;
+    const stagger=this.ride==='skis'?skiStagger:0;
     // Outward yaw swings the tails inward. Keep the whole ski on its side of
     // the stance centerline, including during the transition to a telemark.
     const tailReach = Math.max(...skiSections.map(([z,width]) =>
@@ -366,6 +372,19 @@ export class AlpineAthlete {
       limb.cuff.position.copy(hand).lerp(elbow,.18);
       limb.cuff.quaternion.copy(limb.fore.quaternion);
     }
+    const wheels=this.rides.get(this.ride)?.wheels;
+    if(wheels?.length){
+      if(!intro&&!reduced&&['inrun','flight','brake'].includes(phase))this.wheelSpin-=dt*(phase==='flight'?6:22);
+      for(const wheel of wheels)wheel.rotation.x=this.wheelSpin;
+    }
+  }
+
+  setRide(id){
+    if(id===this.ride)return;
+    if(this.rides.has(this.ride))this.rides.get(this.ride).root.visible=false;
+    if(id!=='skis'&&!this.rides.has(id))this.rides.set(id,makeRide(this,id));
+    if(this.rides.has(id))this.rides.get(id).root.visible=true;
+    this.ride=id;
   }
 
   clearSnow(surfaceHeight) {
@@ -388,6 +407,12 @@ export class AlpineAthlete {
             lift = Math.max(lift, surfaceHeight(point.z) - point.y);
           }
         }
+      }
+    }
+    if(this.ride!=='skis'){
+      for(const x of [-.60,.60])for(let i=0;i<=12;i++){
+        point.set(x,.025,-1.40+i*.2417).applyMatrix4(this.root.matrix);
+        lift=Math.max(lift,surfaceHeight(point.z)-point.y);
       }
     }
     this.root.position.y += lift;

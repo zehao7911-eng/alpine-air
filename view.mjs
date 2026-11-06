@@ -168,7 +168,7 @@ export class AlpineView{
   p.add(this.flakes);
   this.lastPhase='';this.id=id;
  }
- render(run,kit,mode,fx,reduced,dt=1/60){
+ render(run,kit,mode,fx,reduced,dt=1/60,ride='skis'){
   if(run.hill!==this.id)this.make(run.hill);
   this.venueTime+=dt;
   this.animateVenue?.(this.venueTime,reduced);
@@ -180,6 +180,7 @@ export class AlpineView{
   this.hero.position.set(x,g+.045+air,z);
   this.hero.rotation.x=-slope+(fly?-.18*Math.sin(u*Math.PI):0);
   this.hero.rotation.y=close?-1.83:0;
+  this.athlete.setRide(ride);
   this.athlete.pose(run,intro,dt,reduced);
   this.athlete.clearSnow(snowClearance);
   this.athlete.setKit(kit);

@@ -6,3 +6,12 @@ header .meet{min-width:0;overflow:hidden;text-overflow:ellipsis}
 @media(max-width:360px){header{gap:6px}.brand{font-size:14px;gap:4px}.brand svg{width:28px}.meet{font-size:9px;letter-spacing:.055em;padding:7px 6px}}
 .rating{color:#ffdf8d;font-size:21px;letter-spacing:.1em;line-height:1.25}
 .track #zone.gold{background:#ffd77e}
+.home-dock button{justify-content:center;gap:5px;padding:0 6px;min-width:0}
+.home-dock button span:last-child{font-size:11px;color:#acf6df}
+.ride-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:12px 0}
+.ride-choice{min-height:54px;padding:7px 9px;text-align:left;font-size:13px;font-weight:850;border:1px solid #c1e5f433;border-radius:8px;background:#263f59}
+.ride-choice small{margin-top:3px;color:#b5cedd;font-size:9px;letter-spacing:.08em}
+.ride-choice[aria-pressed="true"]{border-color:#abf6dc;background:#345c66;box-shadow:inset 3px 0 #aef5df}
+#toast.meme{color:#342445;background:#ffd684;border-color:#ee9768;transform:translateX(-50%) rotate(-3deg);letter-spacing:.055em}
+@media(max-width:350px){.ride-choice{min-height:48px}.home-dock button{font-size:12px}}
+.garage-dock button{padding:0 8px;white-space:nowrap;font-size:12px;gap:4px}
