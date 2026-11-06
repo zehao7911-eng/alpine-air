@@ -9,13 +9,8 @@ header .meet{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .track #zone.gold{background:#ffd77e}
 .home-dock button{justify-content:center;gap:5px;padding:0 6px;min-width:0}
 .home-dock button span:last-child{font-size:11px;color:#acf6df}
-.ride-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:12px 0}
-.ride-choice{min-height:54px;padding:7px 9px;text-align:left;font-size:13px;font-weight:850;border:1px solid #c1e5f433;border-radius:8px;background:#263f59}
-.ride-choice small{margin-top:3px;color:#b5cedd;font-size:9px;letter-spacing:.08em}
-.ride-choice[aria-pressed="true"]{border-color:#abf6dc;background:#345c66;box-shadow:inset 3px 0 #aef5df}
 #toast.meme{color:#342445;background:#ffd684;border-color:#ee9768;transform:translateX(-50%) rotate(-3deg);letter-spacing:.055em}
-@media(max-width:350px){.ride-choice{min-height:48px}.home-dock button{font-size:12px}}
-.garage-dock button{padding:0 8px;white-space:nowrap;font-size:12px;gap:4px}
+@media(max-width:350px){.home-dock button{font-size:12px}}
 </style></head>
 <body><main id="game" aria-label="Alpine Air">
 <div id="stage" aria-hidden="true"></div><div class="vignette"></div>
@@ -46,12 +41,28 @@ const CHALLENGES=[
  {id:'ridge-reach',name:'Ridge Reach',hill:2,jumps:1,min:104,landing:.66,detail:'Reach 104 m and land with control on Aurora Ridge.'},
  {id:'north-star',name:'North Star',hill:2,jumps:2,min:99,gap:7,landing:.75,detail:'Land two jumps of at least 99 m, within 7 m of each other.'}
 ];
-const RIDES=[
- {id:'skis',name:'Classic Skis',tag:'Original'},
- {id:'tub',name:'Tub Launcher',tag:'Bath time'},
- {id:'cart',name:'Cart of Duty',tag:'Aisle nine'},
- {id:'duck',name:'Quack Attack',tag:'Unlicensed'}
+const TOUR=[
+ {id:'tub',name:'Tub Launcher',hill:0,tag:'A bath with no brakes.',clean:'SQUEAKY CLEAN.',crash:'THE SOAP GOT AWAY.'},
+ {id:'cart',name:'Cart of Duty',hill:1,tag:'Aisle nine is now airborne.',clean:'EXPRESS CHECKOUT.',crash:'CLEANUP ON AISLE NINE.'},
+ {id:'toilet',name:'Porcelain Express',hill:2,tag:'The throne is cleared for takeoff.',clean:'ROYAL FLUSH.',crash:'PLUMBING HAS LEFT THE CHAT.'},
+ {id:'duck',name:'Quack Attack',hill:3,tag:'The duck has declined a pilot license.',clean:'QUACK. NO NOTES.',crash:'DUCK AROUND AND FIND OUT.'},
+ {id:'toaster',name:'Pop-Tart Patrol',hill:4,tag:'Two slices. Zero flight training.',clean:'GOLDEN BROWN.',crash:'IT’S TOAST.'},
+ {id:'sofa',name:'Couch Potato 9000',hill:1,tag:'The remote is definitely in here.',clean:'COUCH DELIVERY COMPLETE.',crash:'THE COUCH ATE THE REMOTE.'},
+ {id:'banana',name:'Banana for Scale',hill:3,tag:'The peel is the safety system.',clean:'APPEALING LANDING.',crash:'PEELING OUT.'},
+ {id:'ufo',name:'Unidentified Flying Ottoman',hill:4,tag:'The aliens bought the cheap seats.',clean:'CONTACT CONFIRMED.',crash:'PLEASE DO NOT PHONE HOME.'}
 ];
+function tourStage(run){
+ const match=/^tour-(\d+)$/.exec(run?.activity??'');
+ return match?TOUR[Number(match[1])]:undefined;
+}
+const tourIndex=run=>TOUR.indexOf(tourStage(run));
+function newTourRun(index=0){return newRun(TOUR[index].hill,'tour-'+index)}
+const wipeout=run=>Boolean(tourStage(run))&&run.land<.45;
+function crashAmount(run){
+ if(run.phase!=='brake'||!wipeout(run))return 0;
+ const t=clamp(run.t/1.04);
+ return Math.sin(Math.PI*t)*(1-t*.35);
+}
 const clamp=(x,a=0,b=1)=>Math.min(b,Math.max(a,x));
 const challengeFor=run=>CHALLENGES.find(challenge=>challenge.id===run.activity);
 const jumpLimit=run=>run.activity==='circuit'?2:challengeFor(run)?.jumps??1;
@@ -68,14 +79,16 @@ function profile(v={}){
  const best=HILLS.map((_,i)=>clamp(Number(v.best?.[i])||0,0,350));
  let unlocked=Number.isInteger(v.unlocked)?clamp(v.unlocked,0,HILLS.length-1):0;
  if(unlocked===2&&best[2]>=HILLS[2].target)unlocked=3;
- return {unlocked,best,practice:HILLS.map((_,i)=>clamp(Number(v.practice?.[i])||0,0,150)),medals,aurora:v.aurora===true,ember:v.ember===true,kit:['blue','rose','ice','aurora','ember','summit','gold'].includes(v.kit)?v.kit:'blue',sound:v.sound!==false,music:typeof v.music==='boolean'?v.music:v.sound!==false,ride:RIDES.some(ride=>ride.id===v.ride)?v.ride:'skis'}
+ return {unlocked,best,practice:HILLS.map((_,i)=>clamp(Number(v.practice?.[i])||0,0,150)),medals,aurora:v.aurora===true,ember:v.ember===true,kit:['blue','rose','ice','aurora','ember','summit','gold'].includes(v.kit)?v.kit:'blue',sound:v.sound!==false,music:typeof v.music==='boolean'?v.music:v.sound!==false}
 }
 function newRun(hill=0,activity='circuit'){return {hill,activity,attempt:0,results:[],phase:'ready',t:0,take:0,land:0,mark:false,z:-35,x:0}}
 function restoreRun(r,p){
  if(!r||!Number.isInteger(r.hill)||!HILLS[r.hill]||!Array.isArray(r.results))return null;
  const s=newRun(r.hill,r.activity??'circuit');
  const challenge=challengeFor(s);
- if(challenge){if(challenge.hill!==s.hill||!available(CHALLENGES.indexOf(challenge),p))return null}
+ const stage=tourStage(s);
+ if(stage){if(stage.hill!==s.hill)return null}
+ else if(challenge){if(challenge.hill!==s.hill||!available(CHALLENGES.indexOf(challenge),p))return null}
  else if(s.activity==='practice'){if(!practiceAvailable(s.hill,p))return null}
  else if(s.activity!=='circuit'||s.hill>p.unlocked)return null;
  const limit=jumpLimit(s);
@@ -168,10 +181,28 @@ function makeRide(athlete,id){
   if(!mats.has(color))mats.set(color,new RideThree.MeshStandardMaterial({color,roughness:.52,metalness:.10}));
   return mats.get(color);
  };
- const block=(x,y,z,w,h,d,color)=>athlete.block(root,material(color),x,y,z,w,h,d);
- const oval=(x,y,z,w,h,d,color)=>athlete.oval(root,material(color),x,y,z,w,h,d);
+ let mount=root;
+ const block=(x,y,z,w,h,d,color)=>athlete.block(mount,material(color),x,y,z,w,h,d);
+ const oval=(x,y,z,w,h,d,color)=>athlete.oval(mount,material(color),x,y,z,w,h,d);
+ const pivot=(x,y,z,build)=>{
+  const joint=new RideThree.Group();
+  joint.position.set(x,y,z);
+  root.add(joint);
+  mount=joint;
+  build();
+  mount=root;
+  return joint;
+ };
  const rail=(x,y,z,length,color)=>block(x,y,z,.044,.045,length,color);
- const wheels=[];
+ const wheels=[],bits=[];
+ let gag=()=>{};
+ const scatter=(count,color,rounded=false)=>{
+  for(let i=0;i<count;i++){
+   const piece=rounded?oval(0,0,0,.052,.055,.058,color):block(0,0,0,.093,.041,.075,color);
+   piece.visible=false;
+   bits.push(piece);
+  }
+ };
  const steel=0x718e9e,cream=0xf1eee0,navy=0x244157;
  block(0,.076,-.045,.75,.073,1.64,id==='cart'?steel:0x54768a);
  for(const z of [-.71,.63])block(0,.078,z,.76,.074,.13,navy);
@@ -188,9 +219,11 @@ function makeRide(athlete,id){
   block(.20,.55,1.05,.08,.31,.09,0xe0b568);
   block(.20,.70,1.00,.080,.072,.19,0xe0b568);
   block(.20,.656,.92,.07,.11,.07,0xb9854b);
-  for(const [x,y,z,s] of [[-.25,.43,-.93,.13],[-.34,.52,-.89,.082],[-.17,.48,-1.06,.095]]){
-   oval(x,y,z,s,s,s,0xc6edf0);
-  }
+  const foam=pivot(0,.42,-.98,()=>{
+   for(const [x,y,z,s] of [[-.25,.01,.05,.13],[-.34,.10,.09,.082],[-.17,.06,-.08,.095]])oval(x,y,z,s,s,s,0xc6edf0);
+  });
+  gag=(beat,impact)=>{foam.position.y=.42+Math.abs(Math.sin(beat*1.2))*.16+impact*.25};
+  scatter(9,0xc6edf0,true);
  }else if(id==='cart'){
   const red=0xe86664;
   for(const side of [-1,1]){
@@ -214,8 +247,12 @@ function makeRide(athlete,id){
    for(let i=-3;i<=3;i++)block(i*.123,.218,z,.033,.20,.033,steel);
   }
   block(0,.601,-1.01,.91,.085,.082,red);
-  block(0,.21,.902,.37,.18,.053,red);
-  block(0,.208,.932,.27,.041,.013,0xffdb94);
+  const bell=pivot(0,.29,.902,()=>{
+   block(0,0,0,.37,.18,.053,red);
+   block(0,0,.03,.27,.041,.013,0xffdb94);
+  });
+  gag=(beat,impact)=>{bell.rotation.z=Math.sin(beat*3.5)*(.17+impact*.65)};
+  scatter(7,0xf3c06d);
  }else if(id==='duck'){
   const yellow=0xf0c441,orange=0xf38c39;
   for(const side of [-1,1]){
@@ -228,14 +265,102 @@ function makeRide(athlete,id){
   oval(0,.246,.89,.44,.23,.33,yellow);
   oval(0,.515,1.039,.287,.303,.28,yellow);
   oval(0,.474,1.317,.234,.088,.204,orange);
-  oval(0,.439,1.338,.212,.052,.173,0xdf6831);
+  const beak=oval(0,.439,1.338,.212,.052,.173,0xdf6831);
   for(const side of [-1,1]){
    oval(side*.175,.588,1.238,.073,.088,.051,0xfff3da);
    oval(side*.190,.590,1.277,.042,.060,.027,0x26354a);
    oval(side*.185,.611,1.300,.012,.017,.010,0xffffff);
   }
+  gag=(beat,impact)=>{beak.position.y=.439-(.035+impact*.11)*Math.abs(Math.sin(beat*2.6));beak.rotation.x=impact*.23};
+  scatter(8,0xffe99b);
+ }else if(id==='toilet'){
+  oval(0,.232,.76,.45,.165,.53,cream);
+  oval(0,.339,.79,.35,.041,.424,0x34465a);
+  oval(0,.345,.82,.25,.028,.319,0x64c4d6);
+  block(0,.353,-.84,.76,.55,.33,cream);
+  const lid=pivot(0,.64,-.83,()=>{
+   block(0,.01,.02,.81,.092,.39,0xfaf6e9);
+   block(.32,.02,.16,.089,.075,.10,steel);
+  });
+  gag=(beat,impact)=>{lid.rotation.x=Math.sin(beat*2)*.15-impact*.63;lid.position.y=.64+impact*.22};
+  scatter(9,0xf7f4e9);
+ }else if(id==='toaster'){
+  for(const side of [-1,1]){
+   block(side*.392,.235,.01,.154,.34,1.55,0x9c7ac1);
+   block(side*.466,.24,.03,.033,.23,1.28,0xd8bbeb);
+  }
+  block(0,.241,.86,.91,.363,.34,0xa47fc8);
+  block(0,.43,.86,.88,.059,.33,0xece9ed);
+  const toast=[];
+  for(const x of [-.22,.22]){
+   toast.push(pivot(x,.47,.86,()=>{
+    oval(0,.078,0,.157,.17,.048,0xc9873e);
+    oval(0,.088,.038,.129,.143,.025,0xf7d589);
+    for(const dot of [-.047,.047])oval(dot,.11,.062,.012,.018,.012,navy);
+   }));
+  }
+  gag=(beat,impact)=>toast.forEach((slice,i)=>{
+   slice.position.y=.47+Math.abs(Math.sin(beat*1.6+i))*.19+impact*(.54+i*.14);
+   slice.rotation.z=(i?1:-1)*impact*.72;
+  });
+  scatter(8,0xefbd70);
+ }else if(id==='sofa'){
+  const upholstery=0xa45362;
+  for(const side of [-1,1]){
+   oval(side*.419,.235,-.06,.128,.157,.83,upholstery);
+   oval(side*.418,.321,.54,.141,.129,.23,0xd17a75);
+  }
+  block(0,.348,-.98,.99,.53,.30,upholstery);
+  const cushion=pivot(.18,.608,-1.00,()=>{
+   oval(0,.03,0,.193,.10,.145,0xeeb881);
+   block(-.15,.11,.01,.085,.034,.21,0x484057);
+  });
+  gag=(beat,impact)=>{cushion.position.y=.608+.105*Math.abs(Math.sin(beat))+impact*.64;cushion.rotation.z=Math.sin(beat*1.6)*.20+impact*2.3};
+  scatter(7,0xd8927e);
+ }else if(id==='banana'){
+  for(const side of [-1,1]){
+   const peel=oval(side*.415,.229,-.02,.138,.175,.99,0xeab532);
+   peel.rotation.x=side*.055;
+  }
+  oval(0,.226,-.99,.404,.180,.344,0xf0ca44);
+  oval(0,.259,.97,.39,.182,.315,0xf5d64d);
+  const stem=pivot(0,.327,1.17,()=>{
+   oval(0,.16,.08,.115,.239,.116,0xd5a032).rotation.x=.49;
+   oval(0,.348,.17,.096,.054,.09,0x665443);
+  });
+  gag=(beat,impact)=>{stem.rotation.x=Math.sin(beat*2)*(.23+impact*.65);stem.rotation.z=impact*.32};
+  scatter(9,0xf7c837);
+ }else if(id==='ufo'){
+  const hull=0x7199bc;
+  for(const side of [-1,1]){
+   oval(side*.425,.24,-.02,.180,.151,.99,hull);
+   for(const z of [-.71,-.35,0,.35,.71])oval(side*.576,.264,z,.039,.046,.060,0x8df3cf);
+  }
+  oval(0,.258,.99,.48,.166,.31,hull);
+  oval(0,.275,-1.02,.47,.165,.26,hull);
+  const alien=pivot(0,.36,1.0,()=>{
+   oval(0,.02,0,.31,.08,.208,0x486487);
+   oval(0,.165,0,.158,.135,.125,0x9adf87);
+   for(const x of [-.063,.063])oval(x,.171,.10,.033,.042,.034,0x233b49);
+   block(0,.31,0,.023,.096,.021,steel);
+   oval(0,.367,0,.040,.042,.038,0xfad780);
+  });
+  gag=(beat,impact)=>{alien.rotation.y=beat*.70+impact*5.0;alien.position.y=.36+impact*.54};
+  scatter(10,0x96efcb,true);
  }
- return {root,wheels};
+ return {root,wheels,gag,bits};
+}
+
+function animateRide(model,time,impact,braking,reduced){
+ const strength=reduced?0:impact;
+ model.gag(reduced?0:time*6,strength);
+ for(const [i,piece] of model.bits.entries()){
+  piece.visible=!reduced&&braking&&impact>.02;
+  if(!piece.visible)continue;
+  const a=i*2.399,reach=Math.min(1,time*1.8);
+  piece.position.set(Math.cos(a)*(.43+reach*.55),.70+impact*(.45+(i%4)*.13),Math.sin(a)*(.62+reach*.80));
+  piece.rotation.set(a+time*8,a*.5,time*5);
+ }
 }
 
 const Three = window.THREE;
@@ -577,6 +702,7 @@ class AlpineAthlete {
     this.torso.updateMatrix();
     this.head.rotation.x = -pitch * .71;
     const [hip, ankle, knee, shoulder, elbow, hand, axis] = this.scratch;
+    const panic=intro||reduced?0:crashAmount(run);
 
     const connect = (mesh, a, b, width, depth = width) => {
       axis.subVectors(b,a);
@@ -599,8 +725,9 @@ class AlpineAthlete {
       connect(limb.calf,knee,ankle,.105,.100);
       limb.knee.position.copy(knee);
       shoulder.set(side*.267,.486,.006);
-      elbow.set(side*(.27+armOut*.55),.486+elbowY,elbowZ);
-      hand.set(side*(.27+armOut),.486+handY,handZ);
+      const flail=panic*Math.sin(run.t*14+side*.7);
+      elbow.set(side*(.27+armOut*.55+panic*.09),.486+elbowY+flail*.10,elbowZ);
+      hand.set(side*(.27+armOut+panic*.22),.486+handY+flail*.24,handZ);
       connect(limb.upper,shoulder,elbow,.093);
       connect(limb.fore,elbow,hand,.078);
       limb.elbow.position.copy(elbow);
@@ -609,11 +736,12 @@ class AlpineAthlete {
       limb.cuff.position.copy(hand).lerp(elbow,.18);
       limb.cuff.quaternion.copy(limb.fore.quaternion);
     }
-    const wheels=this.rides.get(this.ride)?.wheels;
-    if(wheels?.length){
+    const model=this.rides.get(this.ride);
+    if(model?.wheels.length){
       if(!intro&&!reduced&&['inrun','flight','brake'].includes(phase))this.wheelSpin-=dt*(phase==='flight'?6:22);
-      for(const wheel of wheels)wheel.rotation.x=this.wheelSpin;
+      for(const wheel of model.wheels)wheel.rotation.x=this.wheelSpin;
     }
+    if(model)animateRide(model,intro?0:run.t,intro?0:crashAmount(run),!intro&&phase==='brake',reduced);
   }
 
   setRide(id){
@@ -647,8 +775,8 @@ class AlpineAthlete {
       }
     }
     if(this.ride!=='skis'){
-      for(const x of [-.60,.60])for(let i=0;i<=12;i++){
-        point.set(x,.025,-1.40+i*.2417).applyMatrix4(this.root.matrix);
+      for(const x of [-.69,.69])for(let i=0;i<=12;i++){
+        point.set(x,.019,-1.46+i*.251).applyMatrix4(this.root.matrix);
         lift=Math.max(lift,surfaceHeight(point.z)-point.y);
       }
     }
@@ -1006,8 +1134,10 @@ class AlpineView{
   const g=ground(z),slope=Math.atan2(ground(z+.85)-ground(z-.85),1.70);
   const air=fly?Math.sin(u*Math.PI)*(2.55+1.05*r.take):0;
   this.hero.position.set(x,g+.045+air,z);
-  this.hero.rotation.x=-slope+(fly?-.18*Math.sin(u*Math.PI):0);
+  const crash=reduced||intro?0:crashAmount(r);
+  this.hero.rotation.x=-slope+(fly?-.18*Math.sin(u*Math.PI):0)-crash*.20;
   this.hero.rotation.y=close?-1.83:0;
+  this.hero.rotation.z=crash*(tourIndex(r)%2===0?-.96:.96)*Math.sin(r.t*5.2);
   this.athlete.setRide(ride);
   this.athlete.pose(run,intro,dt,reduced);
   this.athlete.clearSnow(snowClearance);
@@ -1158,6 +1288,36 @@ class SledMusic{
  }
 }
 
+const rideCues={
+ tub:{wave:'sine',launch:[230,290,390],land:[330,410,620],crash:[380,290,210,160],slide:.63},
+ cart:{wave:'square',launch:[188,251,211],land:[392,494,660],crash:[255,193,244,136,171],slide:.93},
+ toilet:{wave:'triangle',launch:[190,245,340],land:[261,330,392,523],crash:[360,270,184,117,78],slide:1.38},
+ duck:{wave:'sawtooth',launch:[510,370],land:[620,460,575],crash:[580,460,290,175],slide:1.48},
+ toaster:{wave:'triangle',launch:[520,680],land:[880,1175],crash:[750,1180,235],slide:.77},
+ sofa:{wave:'triangle',launch:[132,158,196],land:[248,196,156],crash:[242,175,112,65],slide:1.30},
+ banana:{wave:'sine',launch:[262,338,530],land:[415,550,700],crash:[655,445,250,110],slide:1.65},
+ ufo:{wave:'sine',launch:[385,620,430,870],land:[700,480,940],crash:[970,580,365,195,120],slide:1.74}
+};
+function playRideSound(ctx,ride,event){
+ const cue=rideCues[ride];
+ if(!cue||ctx?.state!=='running')return;
+ cue[event].forEach((hz,i)=>{
+  const osc=ctx.createOscillator(),gain=ctx.createGain();
+  const start=ctx.currentTime+i*.077;
+  const duration=event==='crash'?.16:.125;
+  osc.type=cue.wave;
+  osc.frequency.setValueAtTime(hz*cue.slide,start);
+  osc.frequency.exponentialRampToValueAtTime(hz,start+duration*.70);
+  gain.gain.setValueAtTime(.0001,start);
+  gain.gain.exponentialRampToValueAtTime(cue.wave==='sawtooth'||cue.wave==='square'?.027:.064,start+.017);
+  gain.gain.exponentialRampToValueAtTime(.0001,start+duration);
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(start);
+  osc.stop(start+duration+.008);
+ });
+}
+
 const $=id=>document.getElementById(id),key='alpine-air-v1';
 const reduced=matchMedia('(prefers-reduced-motion: reduce)');
 let data;try{data=JSON.parse(localStorage.getItem(key)||'null')}catch{}
@@ -1165,7 +1325,8 @@ const valid=v=>v?.game==='alpine-air'&&v.v===1&&v.profile&&typeof v.profile==='o
 let pf=profile(valid(data)?data.profile:undefined);
 let circuit=restoreRun(valid(data)?data.run:null,pf)||newRun();
 let side=restoreRun(valid(data)?data.side:null,pf);
-let run=data?.selected==='side'&&side?side:circuit;
+let tour=restoreRun(valid(data)?data.tour:null,pf)||newTourRun();
+let run=data?.selected==='tour'?tour:data?.selected==='side'&&side?side:circuit;
 let mode='home',paused=false,changed=false,support={},fx=null,noticeUntil=0,last=0,ctx=null,music,view;
 const host=new AlpineHost(window,{
  status(v){support=v;if(mode==='kits')panel()},
@@ -1177,7 +1338,8 @@ const host=new AlpineHost(window,{
    pf=cloud;
    circuit=restoreRun(v.run,pf)||newRun();
    side=restoreRun(v.side,pf);
-   run=v.selected==='side'&&side?side:circuit;
+   tour=restoreRun(v.tour,pf)||newTourRun();
+   run=v.selected==='tour'?tour:v.selected==='side'&&side?side:circuit;
    try{localStorage.setItem(key,JSON.stringify(payload()))}catch{}
   }else{
    pf.unlocked=Math.max(pf.unlocked,cloud.unlocked);
@@ -1191,8 +1353,15 @@ const host=new AlpineHost(window,{
   if(!active()||paused)panel();
  }
 });
-function payload(){return {game:'alpine-air',v:1,profile:pf,run:snapshotRun(circuit),side:snapshotRun(side),selected:run===side?'side':'circuit'}}
-function selectRun(next){run=next;if(next.activity==='circuit')circuit=next;else side=next;mode='race';fx=null;save()}
+function payload(){return {game:'alpine-air',v:1,profile:pf,run:snapshotRun(circuit),side:snapshotRun(side),tour:snapshotRun(tour),selected:run===tour?'tour':run===side?'side':'circuit'}}
+function selectRun(next){
+ run=next;
+ if(tourStage(next))tour=next;
+ else if(next.activity==='circuit')circuit=next;
+ else side=next;
+ mode='race';fx=null;noticeUntil=0;$('toast').textContent='';save();
+}
+const displayedRide=()=>mode==='race'?tourStage(run)?.id??'skis':'skis';
 function save(){changed=true;let p=payload();try{localStorage.setItem(key,JSON.stringify(p))}catch{}host.save(p)}
 function unlockAudio(){
  try{
@@ -1204,13 +1373,11 @@ function unlockAudio(){
 function tone(notes,type='sine'){if(!pf.sound)return;try{const at=ctx.currentTime;notes.forEach((freq,i)=>{const t=at+i*.073,o=ctx.createOscillator(),g=ctx.createGain();o.type=type;o.frequency.value=freq;g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(.063,t+.025);g.gain.exponentialRampToValueAtTime(.0001,t+.20);o.connect(g);g.connect(ctx.destination);o.start(t);o.stop(t+.205)})}catch{}}
 function notice(s,meme=false){$('toast').textContent=s;$('toast').classList.toggle('meme',meme);noticeUntil=performance.now()+1050}
 function rideLanding(run){
- if(pf.ride==='skis')return false;
- if(run.land<.45)notice('THIS IS FINE.',true);
- else if(run.land>.81)notice({tub:'BATH TIME. NAILED IT.',cart:'CLEANUP ON AISLE NINE',duck:'QUACK. NO NOTES.'}[pf.ride],true);
- else notice('TASK FAILED SUCCESSFULLY',true);
- if(pf.ride==='duck')tone([620,460,575],'sawtooth');
- if(pf.ride==='cart')tone([215,295,192,245],'square');
- if(pf.ride==='tub')tone([255,320,465],'sine');
+ const stage=tourStage(run);
+ if(!stage)return false;
+ const crashed=wipeout(run);
+ notice(crashed?stage.crash:stage.clean,true);
+ if(pf.sound)playRideSound(ctx,stage.id,crashed?'crash':'land');
  return true;
 }
 const button=(label,id,cl='primary',tail='→',disabled=false)=>'<button type="button" class="'+cl+'" data-do="'+id+'" '+(disabled?'disabled':'')+'><span>'+label+'</span><span aria-hidden="true">'+tail+'</span></button>';
@@ -1220,6 +1387,16 @@ const owned=k=>k==='blue'||k==='rose'&&pf.unlocked>=1||k==='ice'&&pf.best[2]>=HI
 const starsLabel=stars=>'★'.repeat(stars)+'☆'.repeat(3-stars);
 function marks(run){
  return '<div class="scores">'+run.results.map(jump=>'<div class="score"><strong>'+jump.distance+' m</strong><span>Style '+jump.style.toFixed(1)+'</span><b>'+jump.points.toFixed(1)+' pts</b></div>').join('')+'</div>';
+}
+function tourPanel(){
+ const stage=tourStage(run),index=tourIndex(run),lastStage=index===TOUR.length-1;
+ const label='<small>Sled parade · '+(index+1)+' / '+TOUR.length+'</small>';
+ if(run.phase==='ready')return label+'<h2>'+stage.name+'</h2><p>'+stage.tag+'</p>'+button('Start descent','start');
+ if(run.phase!=='result')return '';
+ const title=lastStage?'Parade complete':wipeout(run)?'Spectacular wipeout':'Landed!';
+ return label+'<h2>'+title+'</h2>'+marks(run)+'<p>'+(wipeout(run)?stage.crash:stage.clean)+'</p>'+
+  (lastStage?button('Restart parade','tour-reset'):button('Next mystery sled','tour-next'))+
+  '<div class="row">'+button('Home','home','secondary','←')+'</div>';
 }
 function activityPanel(){
  const challenge=challengeFor(run);
@@ -1244,20 +1421,22 @@ function panel(){
  if(!view)return;
  if(paused){html='<small>Alpine circuit</small><h2>Paused</h2>'+button('Resume','resume')+'<div class="row">'+button(pf.sound?'SFX on':'SFX off','sound','secondary','◖')+button(pf.music?'Music on':'Music off','music','secondary','♪')+'</div>'}
  else if(mode==='home'){
-  html='<small>THE ALPINE CIRCUIT</small><h1>Catch the air.</h1><p>Tap to jump. Tap again to land.</p>'+
-   (run===side&&side.phase!=='result'?button('Resume '+(challengeFor(side)?.name??'practice'),'resume-side'):'')+
-   button(circuit.phase==='result'?'View results':circuit.results.length?'Continue meet':'Enter meet','enter',run===side&&side.phase!=='result'?'choice':'primary')+
-   '<div class="row home-dock">'+button('Garage','garage','secondary','◇')+button('Venues','hills','secondary','◭')+button('More','more','secondary','⋯')+'</div>';
+  const began=tourIndex(tour)>0||tour.phase==='result';
+  html='<small>ALPINE AIR</small><h1>Sled Parade</h1><p>Eight surprise sleds. Tap to jump. Tap again to land.</p>'+
+   button(began?'Continue parade':'Start parade','tour')+
+   '<div class="row home-dock">'+button('Venues','hills','secondary','◭')+button('More','more','secondary','⋯')+'</div>';
  }
- else if(mode==='garage'){
-  html='<small>Questionable equipment</small><h2>Garage</h2><div class="ride-grid">'+
-   RIDES.map(ride=>'<button type="button" class="ride-choice" data-do="ride-'+ride.id+'" aria-pressed="'+(pf.ride===ride.id)+'"><span>'+ride.name+'</span><small>'+ride.tag+'</small></button>').join('')+
-   '</div><div class="row garage-dock">'+button('Back','home','secondary','←')+button('Suits','kits','secondary','◇')+button(pf.music?'Music on':'Music off','music','secondary','♪')+'</div>';
+ else if(mode==='settings'){
+  html='<small>Alpine Air</small><h2>Settings</h2>'+button('Suits','kits','choice','◇')+
+   '<div class="row">'+button(pf.sound?'SFX on':'SFX off','sound','secondary','◖')+button(pf.music?'Music on':'Music off','music','secondary','♪')+'</div>'+
+   '<div class="row">'+button('Back','home','secondary','←')+'</div>';
  }
  else if(mode==='more'){
   html='<small>Alpine circuit</small><h2>More ways to play</h2>'+
+   button(circuit.phase==='result'?'Circuit results':circuit.results.length?'Continue circuit':'Classic circuit','enter','choice','◭')+
+   (side&&side.phase!=='result'?button('Resume '+(challengeFor(side)?.name??'practice'),'resume-side','choice'):'')+
    button('Challenges','challenges','choice','◈')+button('Practice','practice','choice','↻')+
-   '<div class="row">'+button('Back','home','secondary','←')+button(pf.sound?'SFX on':'SFX off','sound','secondary','◖')+'</div>';
+   '<div class="row">'+button('Back','home','secondary','←')+button('Settings','settings','secondary','♪')+'</div>';
  }
  else if(mode==='challenges'){
   html='<small>Alpine challenge board</small><h2>Challenges</h2><p>'+starTotal()+' / 18 stars · Clear a challenge to unlock the next.</p>'+
@@ -1279,8 +1458,9 @@ function panel(){
  else if(mode==='kits'){html='<small>Equipment</small><h2>Ski suits</h2>'+Object.keys(names).filter(k=>!['aurora','ember'].includes(k)||support[k]||pf[k]).map(k=>button(names[k],'kit-'+k,'choice',pf.kit===k?'✓':owned(k)?'◇':k==='summit'?'4 STARS':k==='gold'?'12 STARS':'LOCKED',!owned(k))).join('');
   if(support.aurora&&!pf.aurora)html+='<p class="reward">Like this game in GameWave to unlock Aurora Violet.</p>';
   if(support.ember&&!pf.ember)html+='<p class="reward">Post a direct comment in GameWave to unlock Ember Orange.</p>';
-  html+='<div class="row">'+button('Back','garage','secondary','←')+button(pf.sound?'SFX on':'SFX off','sound','secondary','◖')+'</div>';
- }else if(run.activity!=='circuit'){html=activityPanel()}
+  html+='<div class="row">'+button('Back','settings','secondary','←')+'</div>';
+ }else if(tourStage(run)){html=tourPanel()}
+ else if(run.activity!=='circuit'){html=activityPanel()}
  else if(run.phase==='ready'){html='<small>'+h.name+' · Jump '+(run.attempt+1)+' / 2</small><h2>At the gate</h2><p>Tap when the timing bar reaches mint. Two jumps to score '+h.target+' points.</p>'+button('Start descent','start')}
  else if(run.phase==='between'||run.phase==='result'){
   const done=run.phase==='result',win=total(run)>=h.target,finalHill=run.hill===HILLS.length-1;
@@ -1296,7 +1476,7 @@ function press(){
  if(e==='start'){host.connect();host.start();save();tone([320,470]);panel()}
  if(e==='take'||e==='land'){
   const q=e==='take'?run.take:run.land;
-  if(e==='take'&&q>=.81&&pf.ride!=='skis')notice('YEET!',true);
+  if(e==='take'&&q>=.81&&tourStage(run))notice('YEET!',true);
   else notice(q>=.81?(e==='take'?'CLEAN TAKEOFF':'TELEMARK READY'):q>=.45?'GOOD TIMING':'OFF THE MARK');
   tone(q>=.81?[480,645,815]:[325,430]);if(q>=.81)navigator.vibrate?.(14);
  }
@@ -1310,8 +1490,11 @@ $('panel').addEventListener('click',ev=>{
  if(id==='music'){pf.music=!pf.music;if(pf.music)unlockAudio();else music?.update(false);save();panel();return}
  tone([380]);
  if(id==='enter')selectRun(circuit);
+ else if(id==='tour')selectRun(tour);
+ else if(id==='tour-next'&&run===tour&&run.phase==='result'&&tourIndex(run)<TOUR.length-1)selectRun(newTourRun(tourIndex(run)+1));
+ else if(id==='tour-reset'&&run===tour&&run.phase==='result')selectRun(newTourRun());
  else if(id==='resume-side'&&side)selectRun(side);
- else if(['home','hills','kits','garage','more','challenges','practice'].includes(id))mode=id;
+ else if(['home','hills','kits','settings','more','challenges','practice'].includes(id))mode=id;
  else if(id==='second'){nextAttempt(run);mode='race';save()}
  else if(id.startsWith('challenge-')){
   const i=Number(id.slice(10)),challenge=CHALLENGES[i];
@@ -1325,14 +1508,10 @@ $('panel').addEventListener('click',ev=>{
   if(n>pf.unlocked||n>=HILLS.length)return;
   selectRun(newRun(n))
  }else if(id.startsWith('kit-')){const k=id.slice(4);if(owned(k)){pf.kit=k;save()}}
- else if(id.startsWith('ride-')){
-  const ride=id.slice(5);
-  if(RIDES.some(option=>option.id===ride)){pf.ride=ride;save();tone(ride==='duck'?[520,400,650]:[430,610]);}
- }
  panel()
 });
 $('tap').addEventListener('click',press);
-$('menu').addEventListener('click',()=>{unlockAudio();tone([335]);if(active()){paused=!paused;if(paused)music?.update(false)}else{mode=mode==='home'?'garage':'home'}panel()});
+$('menu').addEventListener('click',()=>{unlockAudio();tone([335]);if(active()){paused=!paused;if(paused)music?.update(false)}else{mode=mode==='home'?'settings':'home'}panel()});
 window.addEventListener('keydown',e=>{if(e.repeat||e.target.closest?.('button'))return;if(e.code==='Space'&&active()){e.preventDefault();press()}});
 function freeze(){music?.update(false);if(active()&&!paused){paused=true;panel()}}
 document.addEventListener('visibilitychange',()=>{if(document.hidden)freeze()});wide.addEventListener('change',()=>{if(wide.matches)freeze()});
@@ -1353,7 +1532,7 @@ function controls(){
  $('zone').style.left=(clamp(left/duration)*100)+'%';
  $('zone').style.right=(100-clamp(right/duration)*100)+'%';
  $('zone').classList.toggle('gold',Boolean(gold));
- $('jump').textContent='JUMP '+(run.attempt+1)+' / '+jumpLimit(run);
+ $('jump').textContent=tourStage(run)?'SLED '+(tourIndex(run)+1)+' / '+TOUR.length:'JUMP '+(run.attempt+1)+' / '+jumpLimit(run);
  $('wind').textContent=h.wind===0?'— Calm':(h.wind>0?'→ ':'← ')+Math.abs(h.wind).toFixed(1)+' m/s';
  $('meters').firstChild.textContent=Math.round(Math.min(Math.max(0,run.z),distanceWorld(run))*2.36)+' ';
 }
@@ -1366,7 +1545,12 @@ function frame(ms){
   const training=run.activity==='practice'||Boolean(takeoffBand(run));
   const tutorial=(training||run.hill===0&&run.attempt===0)&&!run.mark&&(run.phase==='inrun'&&run.t>targetTake(run)-(training?.76:.55)||run.phase==='flight'&&run.t>targetLand(run)-.55);
   const e=tick(run,dt*(tutorial?.61:1));
-  if(e==='flight'){if(!run.take)notice('OFF THE LIP');tone([280,410],'triangle')}
+  if(e==='flight'){
+   if(!run.take)notice('OFF THE LIP');
+   const stage=tourStage(run);
+   if(stage){if(pf.sound)playRideSound(ctx,stage.id,'launch')}
+   else tone([280,410],'triangle');
+  }
   if(e==='touchdown'){
    fx={x:run.x,y:ground(run.z),z:run.z,t:1};
    if(!rideLanding(run)){notice(run.land>.81?'CLEAN TELEMARK':run.land>.45?'SAFE LANDING':'HARD LANDING');tone(run.land>.81?[325,490,650]:[165,120],'triangle')}
@@ -1383,9 +1567,9 @@ function frame(ms){
   controls()
  }
  if(!paused&&fx)fx.t=Math.max(0,fx.t-dt*1.24);
- view.render(run,pf.kit,mode,fx,reduced.matches,paused?0:dt,pf.ride);
+ view.render(run,pf.kit,mode,fx,reduced.matches,paused?0:dt,displayedRide());
 }
-try{view=new AlpineView($('stage'));view.render(run,pf.kit,mode,null,reduced.matches,1/60,pf.ride);panel();host.poll();requestAnimationFrame(frame)}
+try{view=new AlpineView($('stage'));view.render(run,pf.kit,mode,null,reduced.matches,1/60,displayedRide());panel();host.poll();requestAnimationFrame(frame)}
 catch(e){console.error(e);$('panel').innerHTML='<small>Alpine Air</small><h2>3D unavailable</h2><p>This game needs WebGL. Try opening it in Safari, Chrome or Edge with hardware acceleration enabled.</p>'}
 
 })();</script></body></html>

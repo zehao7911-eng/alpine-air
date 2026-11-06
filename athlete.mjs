@@ -1,5 +1,5 @@
-import {clamp, flightTime} from './core.mjs';
-import {makeRide} from './rides.mjs';
+import {clamp, flightTime, crashAmount} from './core.mjs';
+import {makeRide, animateRide} from './rides.mjs';
 
 const Three = window.THREE;
 const up = new Three.Vector3(0, 1, 0);
@@ -340,6 +340,7 @@ export class AlpineAthlete {
     this.torso.updateMatrix();
     this.head.rotation.x = -pitch * .71;
     const [hip, ankle, knee, shoulder, elbow, hand, axis] = this.scratch;
+    const panic=intro||reduced?0:crashAmount(run);
 
     const connect = (mesh, a, b, width, depth = width) => {
       axis.subVectors(b,a);
@@ -362,8 +363,9 @@ export class AlpineAthlete {
       connect(limb.calf,knee,ankle,.105,.100);
       limb.knee.position.copy(knee);
       shoulder.set(side*.267,.486,.006);
-      elbow.set(side*(.27+armOut*.55),.486+elbowY,elbowZ);
-      hand.set(side*(.27+armOut),.486+handY,handZ);
+      const flail=panic*Math.sin(run.t*14+side*.7);
+      elbow.set(side*(.27+armOut*.55+panic*.09),.486+elbowY+flail*.10,elbowZ);
+      hand.set(side*(.27+armOut+panic*.22),.486+handY+flail*.24,handZ);
       connect(limb.upper,shoulder,elbow,.093);
       connect(limb.fore,elbow,hand,.078);
       limb.elbow.position.copy(elbow);
@@ -372,11 +374,12 @@ export class AlpineAthlete {
       limb.cuff.position.copy(hand).lerp(elbow,.18);
       limb.cuff.quaternion.copy(limb.fore.quaternion);
     }
-    const wheels=this.rides.get(this.ride)?.wheels;
-    if(wheels?.length){
+    const model=this.rides.get(this.ride);
+    if(model?.wheels.length){
       if(!intro&&!reduced&&['inrun','flight','brake'].includes(phase))this.wheelSpin-=dt*(phase==='flight'?6:22);
-      for(const wheel of wheels)wheel.rotation.x=this.wheelSpin;
+      for(const wheel of model.wheels)wheel.rotation.x=this.wheelSpin;
     }
+    if(model)animateRide(model,intro?0:run.t,intro?0:crashAmount(run),!intro&&phase==='brake',reduced);
   }
 
   setRide(id){
@@ -410,8 +413,8 @@ export class AlpineAthlete {
       }
     }
     if(this.ride!=='skis'){
-      for(const x of [-.60,.60])for(let i=0;i<=12;i++){
-        point.set(x,.025,-1.40+i*.2417).applyMatrix4(this.root.matrix);
+      for(const x of [-.69,.69])for(let i=0;i<=12;i++){
+        point.set(x,.019,-1.46+i*.251).applyMatrix4(this.root.matrix);
         lift=Math.max(lift,surfaceHeight(point.z)-point.y);
       }
     }

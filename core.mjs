@@ -13,12 +13,28 @@ export const CHALLENGES=[
  {id:'ridge-reach',name:'Ridge Reach',hill:2,jumps:1,min:104,landing:.66,detail:'Reach 104 m and land with control on Aurora Ridge.'},
  {id:'north-star',name:'North Star',hill:2,jumps:2,min:99,gap:7,landing:.75,detail:'Land two jumps of at least 99 m, within 7 m of each other.'}
 ];
-export const RIDES=[
- {id:'skis',name:'Classic Skis',tag:'Original'},
- {id:'tub',name:'Tub Launcher',tag:'Bath time'},
- {id:'cart',name:'Cart of Duty',tag:'Aisle nine'},
- {id:'duck',name:'Quack Attack',tag:'Unlicensed'}
+export const TOUR=[
+ {id:'tub',name:'Tub Launcher',hill:0,tag:'A bath with no brakes.',clean:'SQUEAKY CLEAN.',crash:'THE SOAP GOT AWAY.'},
+ {id:'cart',name:'Cart of Duty',hill:1,tag:'Aisle nine is now airborne.',clean:'EXPRESS CHECKOUT.',crash:'CLEANUP ON AISLE NINE.'},
+ {id:'toilet',name:'Porcelain Express',hill:2,tag:'The throne is cleared for takeoff.',clean:'ROYAL FLUSH.',crash:'PLUMBING HAS LEFT THE CHAT.'},
+ {id:'duck',name:'Quack Attack',hill:3,tag:'The duck has declined a pilot license.',clean:'QUACK. NO NOTES.',crash:'DUCK AROUND AND FIND OUT.'},
+ {id:'toaster',name:'Pop-Tart Patrol',hill:4,tag:'Two slices. Zero flight training.',clean:'GOLDEN BROWN.',crash:'IT’S TOAST.'},
+ {id:'sofa',name:'Couch Potato 9000',hill:1,tag:'The remote is definitely in here.',clean:'COUCH DELIVERY COMPLETE.',crash:'THE COUCH ATE THE REMOTE.'},
+ {id:'banana',name:'Banana for Scale',hill:3,tag:'The peel is the safety system.',clean:'APPEALING LANDING.',crash:'PEELING OUT.'},
+ {id:'ufo',name:'Unidentified Flying Ottoman',hill:4,tag:'The aliens bought the cheap seats.',clean:'CONTACT CONFIRMED.',crash:'PLEASE DO NOT PHONE HOME.'}
 ];
+export function tourStage(run){
+ const match=/^tour-(\d+)$/.exec(run?.activity??'');
+ return match?TOUR[Number(match[1])]:undefined;
+}
+export const tourIndex=run=>TOUR.indexOf(tourStage(run));
+export function newTourRun(index=0){return newRun(TOUR[index].hill,'tour-'+index)}
+export const wipeout=run=>Boolean(tourStage(run))&&run.land<.45;
+export function crashAmount(run){
+ if(run.phase!=='brake'||!wipeout(run))return 0;
+ const t=clamp(run.t/1.04);
+ return Math.sin(Math.PI*t)*(1-t*.35);
+}
 export const clamp=(x,a=0,b=1)=>Math.min(b,Math.max(a,x));
 export const challengeFor=run=>CHALLENGES.find(challenge=>challenge.id===run.activity);
 export const jumpLimit=run=>run.activity==='circuit'?2:challengeFor(run)?.jumps??1;
@@ -35,14 +51,16 @@ export function profile(v={}){
  const best=HILLS.map((_,i)=>clamp(Number(v.best?.[i])||0,0,350));
  let unlocked=Number.isInteger(v.unlocked)?clamp(v.unlocked,0,HILLS.length-1):0;
  if(unlocked===2&&best[2]>=HILLS[2].target)unlocked=3;
- return {unlocked,best,practice:HILLS.map((_,i)=>clamp(Number(v.practice?.[i])||0,0,150)),medals,aurora:v.aurora===true,ember:v.ember===true,kit:['blue','rose','ice','aurora','ember','summit','gold'].includes(v.kit)?v.kit:'blue',sound:v.sound!==false,music:typeof v.music==='boolean'?v.music:v.sound!==false,ride:RIDES.some(ride=>ride.id===v.ride)?v.ride:'skis'}
+ return {unlocked,best,practice:HILLS.map((_,i)=>clamp(Number(v.practice?.[i])||0,0,150)),medals,aurora:v.aurora===true,ember:v.ember===true,kit:['blue','rose','ice','aurora','ember','summit','gold'].includes(v.kit)?v.kit:'blue',sound:v.sound!==false,music:typeof v.music==='boolean'?v.music:v.sound!==false}
 }
 export function newRun(hill=0,activity='circuit'){return {hill,activity,attempt:0,results:[],phase:'ready',t:0,take:0,land:0,mark:false,z:-35,x:0}}
 export function restoreRun(r,p){
  if(!r||!Number.isInteger(r.hill)||!HILLS[r.hill]||!Array.isArray(r.results))return null;
  const s=newRun(r.hill,r.activity??'circuit');
  const challenge=challengeFor(s);
- if(challenge){if(challenge.hill!==s.hill||!available(CHALLENGES.indexOf(challenge),p))return null}
+ const stage=tourStage(s);
+ if(stage){if(stage.hill!==s.hill)return null}
+ else if(challenge){if(challenge.hill!==s.hill||!available(CHALLENGES.indexOf(challenge),p))return null}
  else if(s.activity==='practice'){if(!practiceAvailable(s.hill,p))return null}
  else if(s.activity!=='circuit'||s.hill>p.unlocked)return null;
  const limit=jumpLimit(s);

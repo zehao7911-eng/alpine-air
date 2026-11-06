@@ -49,3 +49,33 @@ export class SledMusic{
   }
  }
 }
+
+const rideCues={
+ tub:{wave:'sine',launch:[230,290,390],land:[330,410,620],crash:[380,290,210,160],slide:.63},
+ cart:{wave:'square',launch:[188,251,211],land:[392,494,660],crash:[255,193,244,136,171],slide:.93},
+ toilet:{wave:'triangle',launch:[190,245,340],land:[261,330,392,523],crash:[360,270,184,117,78],slide:1.38},
+ duck:{wave:'sawtooth',launch:[510,370],land:[620,460,575],crash:[580,460,290,175],slide:1.48},
+ toaster:{wave:'triangle',launch:[520,680],land:[880,1175],crash:[750,1180,235],slide:.77},
+ sofa:{wave:'triangle',launch:[132,158,196],land:[248,196,156],crash:[242,175,112,65],slide:1.30},
+ banana:{wave:'sine',launch:[262,338,530],land:[415,550,700],crash:[655,445,250,110],slide:1.65},
+ ufo:{wave:'sine',launch:[385,620,430,870],land:[700,480,940],crash:[970,580,365,195,120],slide:1.74}
+};
+export function playRideSound(ctx,ride,event){
+ const cue=rideCues[ride];
+ if(!cue||ctx?.state!=='running')return;
+ cue[event].forEach((hz,i)=>{
+  const osc=ctx.createOscillator(),gain=ctx.createGain();
+  const start=ctx.currentTime+i*.077;
+  const duration=event==='crash'?.16:.125;
+  osc.type=cue.wave;
+  osc.frequency.setValueAtTime(hz*cue.slide,start);
+  osc.frequency.exponentialRampToValueAtTime(hz,start+duration*.70);
+  gain.gain.setValueAtTime(.0001,start);
+  gain.gain.exponentialRampToValueAtTime(cue.wave==='sawtooth'||cue.wave==='square'?.027:.064,start+.017);
+  gain.gain.exponentialRampToValueAtTime(.0001,start+duration);
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(start);
+  osc.stop(start+duration+.008);
+ });
+}

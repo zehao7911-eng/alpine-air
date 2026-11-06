@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import {HILLS,newRun,profile,action,tick,flightTime,targetTake,targetLand,nextAttempt,settle,total,restoreRun,snapshotRun} from './core.mjs';
-import {CHALLENGES,practiceAvailable,available,jumpLimit,takeoffBand,challengeResult,recordActivity} from './core.mjs';
+import {CHALLENGES,practiceAvailable,available,jumpLimit,takeoffBand,challengeResult,recordActivity,TOUR,newTourRun,tourIndex,wipeout} from './core.mjs';
 import {AlpineHost} from './sdk.mjs';
-import {SledMusic} from './music.mjs';
+import {SledMusic,playRideSound} from './music.mjs';
 let n=0;const check=(v,msg)=>{assert.ok(v,msg);n++};
 const flush=()=>new Promise(r=>setImmediate(r));
 function jump(r,good=true,st=()=>{},en=()=>{}){
@@ -89,8 +89,8 @@ recordActivity(practice,medals);
 check(medals.practice[0]>0&&medals.best[0]===123&&medals.unlocked===0,'practice and challenge records are independent of the circuit');
 check(contentStarts===10&&contentEnds===10,'only played jumps notify the SDK, including resumed pairs');
 activityHost.stop();
-check(profile({ride:'duck',music:false}).ride==='duck'&&!profile({ride:'duck',music:false}).music,'ride and audio selection restore');
-check(profile({sound:false}).ride==='skis'&&!profile({sound:false}).music,'previous muted saves stay quiet');
+check(!profile({ride:'duck',music:false}).music,'previous audio preferences restore');
+check(!profile({sound:false}).music,'previous muted saves stay quiet');
 const audioEvents=[];
 const param={setValueAtTime(){},exponentialRampToValueAtTime(){},setTargetAtTime(value){audioEvents.push(value)}};
 const audio={currentTime:0,state:'suspended',destination:{},createGain:()=>({gain:{...param},connect(){}}),
@@ -106,5 +106,19 @@ const stopped=audioEvents.length;
 audio.currentTime=3;
 song.update(false);
 check(audioEvents.at(-1)===0&&audioEvents.length===stopped,'pausing silences music and stops scheduling');
+const tourAudio=new Set();
+for(const [i,stage] of TOUR.entries()){
+ const run=newTourRun(i);
+ check(tourIndex(restoreRun(snapshotRun(run),medals))===i,'parade level restores without a venue unlock');
+ playActivity(run,{miss:i%2===0});
+ const restored=restoreRun(snapshotRun(run),medals);
+ check(restored.phase==='result'&&wipeout(restored)===(i%2===0),'clean and wipeout results survive reload');
+ const pitches=[];
+ const stageAudio={...audio,createOscillator:()=>({frequency:{...param,setValueAtTime(hz){pitches.push(hz)}},connect(){},start(){},stop(){}})};
+ for(const event of ['launch','land','crash'])playRideSound(stageAudio,stage.id,event);
+ check(pitches.length>=6,'every sled has three active sound cues');
+ tourAudio.add(pitches.join(','));
+}
+check(tourAudio.size===TOUR.length,'each sled has a distinct sound profile');
 console.log('PASS '+n+' gameplay, save, audio and GameWave mock checks');
 

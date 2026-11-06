@@ -1,4 +1,4 @@
-import {HILLS,clamp,ground,flightTime,distanceWorld,challengeFor} from './core.mjs';
+import {HILLS,clamp,ground,flightTime,distanceWorld,challengeFor,crashAmount,tourIndex} from './core.mjs';
 import {AlpineAthlete} from './athlete.mjs';
 import {buildVenue} from './venues.mjs';
 const T=window.THREE;
@@ -178,8 +178,10 @@ export class AlpineView{
   const g=ground(z),slope=Math.atan2(ground(z+.85)-ground(z-.85),1.70);
   const air=fly?Math.sin(u*Math.PI)*(2.55+1.05*r.take):0;
   this.hero.position.set(x,g+.045+air,z);
-  this.hero.rotation.x=-slope+(fly?-.18*Math.sin(u*Math.PI):0);
+  const crash=reduced||intro?0:crashAmount(r);
+  this.hero.rotation.x=-slope+(fly?-.18*Math.sin(u*Math.PI):0)-crash*.20;
   this.hero.rotation.y=close?-1.83:0;
+  this.hero.rotation.z=crash*(tourIndex(r)%2===0?-.96:.96)*Math.sin(r.t*5.2);
   this.athlete.setRide(ride);
   this.athlete.pose(run,intro,dt,reduced);
   this.athlete.clearSnow(snowClearance);

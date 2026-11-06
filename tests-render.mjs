@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
-import {action, ground, HILLS, CHALLENGES, newRun, targetLand, targetTake, takeoffBand, tick} from './core.mjs';
+import {action, ground, HILLS, CHALLENGES, TOUR, newRun, newTourRun, targetLand, targetTake, takeoffBand, tick} from './core.mjs';
 
 const require = createRequire(import.meta.url);
 const THREE = require('./vendor/three.min.js');
@@ -65,7 +65,7 @@ function verifyFrame(run, mode, dt, reduced,ride='skis') {
     const sled=view.athlete.rides.get(ride).root;
     assert.ok(sled.visible);
     sled.traverse(mesh=>{
-      if(!mesh.isMesh)return;
+      if(!mesh.isMesh||!mesh.visible)return;
       const vertices=mesh.geometry.attributes.position;
       for(let i=0;i<vertices.count;i+=2){
         point.fromBufferAttribute(vertices,i).applyMatrix4(mesh.matrixWorld);
@@ -108,13 +108,12 @@ for (const challenge of CHALLENGES.filter(challenge=>challenge.band)) {
   }
 }
 assert.deepEqual([...phases],['ready','inrun','flight','brake','between','result']);
-for(const ride of ['tub','cart','duck']){
-  const run=newRun(4,'practice');
-  verifyFrame(run,'garage',1/30,false,ride);
+for(const [i,stage] of TOUR.entries()){
+  const run=newTourRun(i),ride=stage.id;
+  verifyFrame(run,'race',1/30,false,ride);
   action(run);
   while(['inrun','flight','brake'].includes(run.phase)){
     if(run.phase==='inrun'&&run.t>=targetTake(run)&&!run.mark)action(run);
-    if(run.phase==='flight'&&run.t>=targetLand(run)&&!run.mark)action(run);
     tick(run,1/30);
     verifyFrame(run,'race',1/30,false,ride);
   }
