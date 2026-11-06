@@ -1,8 +1,8 @@
 import {HILLS,clamp,ground,flightTime,distanceWorld} from './core.mjs';
+import {AlpineAthlete} from './athlete.mjs';
 const T=window.THREE;
 const V=(x,y,z)=>new T.Vector3(x,y,z);
 const mix=(a,b,t)=>a+(b-a)*t;
-const kitColors={blue:0x1769a5,rose:0xc83a66,ice:0x42acbe,aurora:0x5e3db5,ember:0xdb5331};
 export class AlpineView{
  constructor(el){
   this.el=el;this.s=new T.Scene();this.c=new T.PerspectiveCamera(51,1,.1,280);
@@ -27,7 +27,17 @@ export class AlpineView{
  }
  sign(p,x,y,z,w,h,words){let o=new T.Mesh(new T.PlaneGeometry(w,h),new T.MeshBasicMaterial({map:this.label(words),side:T.DoubleSide}));o.rotation.y=Math.PI;o.position.set(x,y,z);p.add(o);return o}
  make(id){
-  if(this.map){this.map.traverse(o=>{if(o.isMesh&&o.geometry!==this.boxGeo&&o.geometry!==this.ballGeo)o.geometry.dispose();if(o.material?.map){o.material.map.dispose();o.material.dispose()}});this.s.remove(this.map)}
+  this.athlete?.dispose();
+  if(this.map){
+   const geometries=new Set();
+   this.map.traverse(o=>{
+    if(o.isMesh&&o.geometry!==this.boxGeo&&o.geometry!==this.ballGeo)geometries.add(o.geometry);
+    if(o.isInstancedMesh)o.dispose();
+    if(o.material?.map){o.material.map.dispose();o.material.dispose()}
+   });
+   geometries.forEach(geometry=>geometry.dispose());
+   this.s.remove(this.map);
+  }
   const p=this.map=new T.Group(),h=HILLS[id];this.s.add(p);this.s.background=new T.Color(h.sky);this.s.fog=new T.FogExp2(h.sky,.0088);
   let seed=12393+id*77;let rand=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296};
   this.box(p,0,-12,37,380,8,315,0xaac8db);
@@ -43,13 +53,38 @@ export class AlpineView{
    const land=new T.BufferGeometry();land.setAttribute('position',new T.Float32BufferAttribute(pts,3));land.setIndex(ix);land.computeVertexNormals();this.mesh(p,land,[0xc7e0ee,0xe1d5e8,0x9db2dc][id],0,0,0);
   }
   const pineGeo=new T.ConeGeometry(1,1,7);
+  const pineBatches=[0x28485d,0x3e6173,0x58788a,0xd7eaf5].map((color,i)=>{
+   const batch=new T.InstancedMesh(pineGeo,this.m(color),i===3?219:73);
+   p.add(batch);
+   return batch;
+  });
+  const transform=new T.Object3D();
   for(let i=0;i<73;i++){let side=i%2?-1:1,x=side*(8.4+rand()*27),z=-38+rand()*116,scale=.65+rand()*1.20,y=shoulder(x,z)-.18;
    this.box(p,x,y+.5*scale,z,.25*scale,1.6*scale,.25*scale,0x6a6773);
-   for(let k=0;k<3;k++){let a=this.mesh(p,pineGeo,[0x2b556a,0x42677a,0x5a7d8e][k],x,y+(1.35+k*.7)*scale,z);a.scale.set((1.1-.18*k)*scale,1.8*scale,(1.1-.18*k)*scale);let b=this.mesh(p,pineGeo,0xd7eaf5,x,y+(1.69+k*.7)*scale,z);b.scale.set((.69-.11*k)*scale,1.1*scale,(.69-.11*k)*scale)}
+   transform.rotation.y=i*1.47;
+   for(let k=0;k<3;k++){
+    const branch=(1.10-.18*k)*scale, cap=(.69-.11*k)*scale;
+    transform.position.set(x,y+(1.35+k*.7)*scale,z);
+    transform.scale.set(branch,1.8*scale,branch);
+    transform.updateMatrix();
+    pineBatches[k].setMatrixAt(i,transform.matrix);
+    transform.position.y=y+(1.68+k*.7)*scale;
+    transform.scale.set(cap,1.10*scale,cap);
+    transform.updateMatrix();
+    pineBatches[3].setMatrixAt(i*3+k,transform.matrix);
+   }
   }
+  pineBatches.forEach(batch=>batch.instanceMatrix.needsUpdate=true);
   this.strip(p,-4.05,4.05,-36,67,h.snow,.001);
   this.strip(p,-1.73,1.73,-36,0,id===2?0x9ab9dc:0xc7e0ed,.018);
-  for(let a of [-1,-.52,.52,1])this.strip(p,a-.045,a+.045,-36,0,0x86a9bd,.022);
+  for(let a of [-1,-.52,.52,1])this.strip(p,a-.023,a+.023,-36,0,0x9fb9c9,.022);
+  for(let a of [-.177,.177]){
+   this.strip(p,a-.087,a+.087,-36,0,id===2?0x7898be:0x91afc2,.025);
+   this.strip(p,a-.054,a+.054,-36,0,id===2?0xb2c8e3:0xdceaf0,.028);
+  }
+  for(let a of [-2.93,-2.65,-2.37,2.37,2.65,2.93]){
+   this.strip(p,a-.012,a+.012,2,63,[0xc9dfed,0xdacee1,0xadc1e2][id],.016);
+  }
   for(let side of [-1,1]){
    this.strip(p,side*3.35-.11,side*3.35+.11,-36,64,0x5886a5,.028);
    this.strip(p,side*3.9-.14,side*3.9+.14,-36,64,0xa7bed2,.025);
@@ -66,10 +101,20 @@ export class AlpineView{
   this.box(p,0,ground(-36)+3.65,-36,8.9,.23,.28,0x13364e);
   for(let x of [-3.9,3.9]){this.box(p,x,ground(-36)+1.7,-36,.31,3.6,.34,0x194660);this.box(p,x,ground(-36)-4.2,-36,.48,8,.48,0x3a5871)}
   this.sign(p,0,ground(-36)+3.17,-35.8,5.25,1.13,h.name.toUpperCase()).rotation.y=0;
+  this.flags=[];
   for(let side of [-1,1])for(let z of [8,23,39,54]){
    let x=side*5.4,y=ground(z)-.16, clr=side>0?0xff7e70:0x51b0ca;
-   this.box(p,x,y+1.45,z,.10,3.1,.12,0x34546e);this.box(p,x+side*.46,y+2.63,z,.9,.54,.085,clr);
-   this.box(p,x+side*.46,y+2.6,z-.05,.62,.07,.025,0xf1faff);
+   this.box(p,x,y+1.45,z,.10,3.1,.12,0x34546e);
+   this.ball(p,x,y+3.02,z,.084,.083,.084,0xf2c779);
+   const flag=new T.Group();
+   p.add(flag);
+   flag.position.set(x,y+2.66,z);
+   this.box(flag,side*.44,0,0,.88,.49,.041,clr);
+   for(let offset of [-.086,.086]){
+    this.box(flag,side*.44,offset,-.024,.67,.029,.008,0xf4faff);
+    this.box(flag,side*.44,offset,.024,.67,.029,.008,0xf4faff);
+   }
+   this.flags.push(flag);
   }
   for(let side of [-1,1]){
    const x=side*7.7,z=52,y=ground(z)-.36;
@@ -78,57 +123,74 @@ export class AlpineView{
     for(let j=0;j<11;j++){let a=x+side*(i*.62-.24),b=z-4.1+j*.8,k=y+i*.40;this.box(p,a,k+.42,b,.36,.58,.34,[0xda684d,0x2b567d,0x768acc,0x216d71,0xeab16e][(i+j+id)%5]);this.ball(p,a,k+.82,b,.19,.22,.19,[0xf1bd9a,0x9b614b,0xe5a887][j%3])}
    }
   }
-  this.shad=this.ball(p,0,0,0,.56,.026,1.17,0x93afc5);
-  this.hero=new T.Group();p.add(this.hero);this.athlete(this.hero);
-  this.flakes=[];const flakeGeo=new T.OctahedronGeometry(.065);for(let i=0;i<36;i++){let f=this.mesh(p,flakeGeo,i%3===0?0xbdf9eb:0xffffff,0,0,0);f.visible=false;this.flakes.push(f)}
+  const shadowCanvas=document.createElement('canvas');
+  shadowCanvas.width=shadowCanvas.height=64;
+  const brush=shadowCanvas.getContext('2d');
+  const gradient=brush.createRadialGradient(32,32,5,32,32,31);
+  gradient.addColorStop(0,'rgba(22,55,82,.57)');
+  gradient.addColorStop(.48,'rgba(22,55,82,.27)');
+  gradient.addColorStop(1,'rgba(22,55,82,0)');
+  brush.fillStyle=gradient;
+  brush.fillRect(0,0,64,64);
+  const shadowGeo=new T.PlaneGeometry(2,2).rotateX(-Math.PI/2);
+  const shadowMaterial=new T.MeshBasicMaterial({map:new T.CanvasTexture(shadowCanvas),transparent:true,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-2});
+  this.shad=new T.Mesh(shadowGeo,shadowMaterial);
+  p.add(this.shad);
+  this.hero=new T.Group();p.add(this.hero);this.athlete=new AlpineAthlete(this,this.hero);
+  const flakeGeo=new T.OctahedronGeometry(.065);
+  this.flakes=new T.InstancedMesh(flakeGeo,this.m(0xeaf9ff),36);
+  this.flakes.frustumCulled=false;
+  this.flakes.visible=false;
+  this.flakes.instanceMatrix.setUsage(T.DynamicDrawUsage);
+  this.flakePose=new T.Object3D();
+  p.add(this.flakes);
   this.lastPhase='';this.id=id;
  }
- athlete(p){
-  let navy=0x172d45, white=0xf4fbff,face=0xe5a979;
-  this.body=new T.Group();p.add(this.body);const b=this.body;
-  this.suit=[];
-  this.suit.push(this.ball(b,0,.82,0,.42,.55,.27,0x1769a5));this.box(b,0,.91,.23,.53,.49,.075,white);
-  this.box(b,0,1.06,.277,.48,.075,.016,0x39bfae);
-  this.box(b,0,.85,.278,.085,.23,.016,navy);this.box(b,.105,.91,.278,.06,.12,.016,navy);
-  this.ball(b,0,1.45,.035,.289,.321,.295,face);this.ball(b,0,1.57,-.01,.33,.30,.327,navy);
-  this.ball(b,0,1.69,-.013,.283,.186,.278,white);
-  this.ball(b,0,1.484,.243,.29,.135,.125,0xffa65f);
-  this.ball(b,0,1.504,.292,.252,.092,.088,0x234364);
-  this.box(b,-.075,1.54,.367,.187,.037,.013,0xa9ebec).rotation.z=.12;
-  this.box(b,0,1.326,.283,.09,.046,.038,0x924d42);
-  this.box(b,0,1.754,-.025,.12,.046,.33,0x28b3a8);
-  this.arms=[];this.legs=[];this.skis=[];
-  for(let side of [-1,1]){
-   let a=new T.Group();a.position.set(side*.39,1.10,0);b.add(a);this.arms.push(a);
-   this.suit.push(this.ball(a,0,-.20,0,.13,.28,.13,0x1769a5));
-   this.ball(a,0,-.49,.035,.105,.19,.108,navy);this.ball(a,0,-.65,.043,.105,.10,.11,white);
-   let l=new T.Group();p.add(l);this.legs.push(l);l.position.set(side*.19,.10,0);
-   this.suit.push(this.ball(l,0,.35,-.018,.15,.37,.158,0x1769a5));this.box(l,0,.116,.055,.23,.19,.34,navy);
-   this.box(l,0,.16,.222,.205,.035,.025,0x97d6d8);
-   let ski=new T.Group();p.add(ski);this.skis.push(ski);ski.position.set(side*.21,.045,0);
-   this.box(ski,0,0,0,.145,.062,2.64,navy);
-   this.box(ski,0,.036,.05,.126,.020,2.44,0xf57962);
-   this.box(ski,0,.047,.65,.105,.019,.35,0xfbf0cb);
-   let tip=this.box(ski,0,.059,1.36,.145,.056,.37,0xf57962);tip.rotation.x=-.21;
-  }
- }
- render(run,kit,mode,fx,reduced){
+ render(run,kit,mode,fx,reduced,dt=1/60){
   if(run.hill!==this.id)this.make(run.hill);
   let r=run, z=r.z, x=r.x, fly=r.phase==='flight', u=fly?clamp(r.t/flightTime(r)):0, intro=mode==='home'||mode==='hills'||mode==='kits'||r.phase==='ready';
   let close=mode==='home'||mode==='hills'||mode==='kits';
   if(intro){z=close?-27:-35;x=0}
   const g=ground(z),slope=Math.atan2(ground(z+.12)-g,.12),air=fly?Math.sin(u*Math.PI)*(2.55+1.05*r.take):0;
-  this.hero.position.set(x,g+.055+air,z);this.hero.rotation.x=-slope+(fly?-.18*Math.sin(u*Math.PI):0);this.hero.rotation.y=close?-1.94:0;
-  this.body.position.set(0,fly?.34:.49,0);const pitch=intro?.12:fly?(r.mark?.55:1.07):r.phase==='inrun'?(r.mark?.64:1.03):r.land>.54?.27:.50;this.body.rotation.x=reduced||!this.lastPhase?pitch:mix(this.body.rotation.x,pitch,.18);
-  this.suit.forEach(m=>m.material=this.m(kitColors[kit]||kitColors.blue));
-  for(let i=0;i<2;i++){let d=i?1:-1;this.skis[i].rotation.y=fly&&!r.mark?d*(.16+.20*Math.sin(Math.PI*u)):0;this.skis[i].position.z=!fly&&r.phase!=='inrun'&&r.land>.54?d*.37:0;this.legs[i].position.z=this.skis[i].position.z;this.legs[i].rotation.x=intro?0:r.phase==='inrun'?-.58:fly?-.57:-.20;this.arms[i].rotation.x=intro?-.15:fly?.79:1.02;this.arms[i].rotation.z=d*(fly?-.24:-.13)}
-  this.shad.position.set(x,g+.027,z);this.shad.rotation.x=-slope;this.shad.scale.x=.48+air*.11;this.shad.scale.z=1.03+air*.12;
+  this.hero.position.set(x,g+.055+air,z);this.hero.rotation.x=-slope+(fly?-.18*Math.sin(u*Math.PI):0);this.hero.rotation.y=close?-1.83:0;
+  this.athlete.pose(run,intro,dt,reduced);
+  this.athlete.setKit(kit);
+  this.shad.position.set(x,g+.043,z);
+  this.shad.rotation.x=-slope;
+  this.shad.scale.set(.46+air*.10,1,1.15+air*.18);
+  this.shad.material.opacity=1/(1+air*.54);
   this.marker.visible=fly||r.phase==='brake';let a=distanceWorld(r)-1.7;const pos=this.marker.geometry.attributes.position;for(let i=0;i<pos.count;i++){let nz=a+Math.floor(i/2)*2/3;pos.setY(i,ground(nz)+.049);pos.setZ(i,nz)}pos.needsUpdate=true;this.marker.frustumCulled=false;
-  this.flakes.forEach((f,i)=>{const k=(i+1)/36,t=fx?.t||0;f.visible=t>0;if(t>0){const age=1-t;f.position.set(fx.x+Math.sin(i*7.3)*age*(1+k)*2,fx.y+.12+Math.sin(i*2.2)**2*Math.sin(Math.PI*age)*1.45,fx.z+Math.cos(i*3.3)*age*3);f.scale.setScalar(t*(.6+k*1.65));f.rotation.set(i,age*5,i*.5)}});
-  let ca=close?V(-5.55,g+3.7,z-3.4):V(x+1.9+(fly?.48*Math.sin(u*Math.PI):0),g+air+4.12,z-5.9);
-  let look=close?V(.05,g+.50,z+.31):V(x,g+air+.20,z+2.15);
-  if(!close&&(r.phase==='result'||r.phase==='between')){ca=V(x-4.4,g+2.72,z+5.4);look=V(x,g+.15,z+.2)}
+  this.drawSnow(r,fx,reduced);
+  this.flags.forEach((flag,i)=>{
+   flag.rotation.y=.14*HILLS[r.hill].wind+(reduced?0:Math.sin(r.t*5+i*.83)*.20);
+  });
+  let ca=close?V(-4.60,g+3.68,z-3.1):V(x+1.9+(fly?.48*Math.sin(u*Math.PI):0),g+air+4.12,z-5.9);
+  let look=close?V(.03,g+.75,z+.17):V(x,g+air+.20,z+2.15);
+  if(!close&&(r.phase==='result'||r.phase==='between')){ca=V(x-4.4,g+2.72,z+5.4);look=V(x,g+.75,z+.2)}
   if(!this.lastPhase||reduced||this.lastPhase==='result'&&r.phase==='ready'||intro&&this.lastPhase!=='ready'){this.cam.copy(ca);this.look.copy(look)}else{this.cam.lerp(ca,.12);this.look.lerp(look,.15)}
   this.lastPhase=r.phase;this.c.position.copy(this.cam);this.c.lookAt(this.look);this.r.render(this.s,this.c);
+ }
+
+ drawSnow(run,fx,reduced){
+  const landing=(fx?.t||0)>0;
+  const sliding=run.phase==='brake'&&run.t<.86;
+  this.flakes.visible=!reduced&&(landing||sliding);
+  if(!this.flakes.visible)return;
+  const pose=this.flakePose;
+  for(let i=0;i<this.flakes.count;i++){
+   const noise=Math.sin(i*7.83);
+   const plume=i<22&&landing;
+   const age=plume?1-fx.t:(run.t*3.1+i*.31)%1;
+   const x=plume?fx.x:run.x;
+   const z=(plume?fx.z:run.z)-age*(plume?2.6:3.3);
+   const height=Math.sin(age*Math.PI)*(.26+Math.abs(noise)*(plume?1.06:.55));
+   pose.position.set(x+noise*(.16+age*(plume?1.44:.69)),ground(z)+.08+height,z);
+   const size=(1-age)*(.45+Math.abs(noise)*1.14);
+   pose.scale.set(size,size*.7,size);
+   pose.rotation.set(i,age*5,i*.5);
+   pose.updateMatrix();
+   this.flakes.setMatrixAt(i,pose.matrix);
+  }
+  this.flakes.instanceMatrix.needsUpdate=true;
  }
 }

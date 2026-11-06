@@ -82,10 +82,392 @@ function settle(r,p){
  return t>=HILLS[r.hill].target;
 }
 
+const Three = window.THREE;
+const up = new Three.Vector3(0, 1, 0);
+const colors = {
+  blue: [0x15598c, 0x39a9c0],
+  rose: [0xa92c55, 0xfb977e],
+  ice: [0x277b90, 0x8df3ea],
+  aurora: [0x5438a5, 0xa796ef],
+  ember: [0xab3d28, 0xffac63]
+};
+const fabric = (color, roughness = .72, metalness = 0) =>
+  new Three.MeshStandardMaterial({ color, roughness, metalness });
+
+function surface(positions, indices, uvs) {
+  const geometry = new Three.BufferGeometry();
+  geometry.setAttribute('position', new Three.Float32BufferAttribute(positions, 3));
+  if (uvs) geometry.setAttribute('uv', new Three.Float32BufferAttribute(uvs, 2));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+// A continuous cross-section mesh gives the suit actual shoulder, waist and hip shapes.
+function loft(rings, sides = 16) {
+  const positions = [], indices = [];
+  rings.forEach(([y, width, depth, center = 0], row) => {
+    for (let j = 0; j < sides; j++) {
+      const angle = j * Math.PI * 2 / sides;
+      positions.push(Math.cos(angle) * width, y, center + Math.sin(angle) * depth);
+      if (row) {
+        const a = (row - 1) * sides + j, b = (row - 1) * sides + (j + 1) % sides;
+        indices.push(a, a + sides, b, b, a + sides, b + sides);
+      }
+    }
+  });
+  return surface(positions, indices);
+}
+
+function curvedPanel(width, height, bow, taper = 0) {
+  const positions = [], indices = [], uvs = [];
+  for (let row = 0; row < 5; row++) {
+    for (let col = 0; col < 13; col++) {
+      const u = col / 12, v = row / 4, edge = u * 2 - 1;
+      const vertical = v * 2 - 1;
+      positions.push(edge * width * .5 * (1 - taper * vertical ** 4), (v - .5) * height, -edge * edge * bow);
+      uvs.push(u, v);
+      if (row && col) {
+        const a = row * 13 + col;
+        indices.push(a - 14, a - 13, a, a - 14, a, a - 1);
+      }
+    }
+  }
+  return surface(positions, indices, uvs);
+}
+
+function paintedTexture(width, height, draw) {
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  draw(canvas.getContext('2d'), width, height);
+  const texture = new Three.CanvasTexture(canvas);
+  texture.encoding = Three.sRGBEncoding;
+  return texture;
+}
+
+function bibTexture(back) {
+  return paintedTexture(256, 288, (ctx, w, h) => {
+    ctx.fillStyle = '#f2f7fa';
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#132d47';
+    ctx.fillRect(0, 0, w, 49);
+    ctx.fillStyle = '#91f2d8';
+    ctx.fillRect(0, 49, w, 8);
+    ctx.font = '800 23px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText('ALPINE AIR', w / 2, 39);
+    ctx.fillStyle = '#193451';
+    ctx.font = 'italic 900 132px system-ui';
+    ctx.fillText('17', w / 2, 190);
+    ctx.font = '800 19px system-ui';
+    ctx.fillText(back ? 'FLIGHT TEAM' : 'ALPINE CIRCUIT', w / 2, 233);
+    ctx.fillRect(31, h - 28, w - 62, 4);
+    ctx.strokeStyle = '#96b8cc';
+    ctx.lineWidth = 4;
+    ctx.setLineDash([5, 7]);
+    ctx.strokeRect(8, 8, w - 16, h - 16);
+  });
+}
+
+function lensTexture() {
+  return paintedTexture(256, 96, (ctx, w, h) => {
+    const glass = ctx.createLinearGradient(0, 0, w * .16, h);
+    glass.addColorStop(0, '#102b46');
+    glass.addColorStop(.39, '#4d9db6');
+    glass.addColorStop(.52, '#9be7e1');
+    glass.addColorStop(.66, '#d98b68');
+    glass.addColorStop(1, '#344364');
+    ctx.fillStyle = glass;
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#b6f1ed';
+    ctx.globalAlpha = .40;
+    ctx.beginPath();
+    ctx.moveTo(0, 33);
+    ctx.lineTo(43, 14);
+    ctx.lineTo(91, 30);
+    ctx.lineTo(157, 17);
+    ctx.lineTo(215, 35);
+    ctx.lineTo(w, 25);
+    ctx.lineTo(w, 48);
+    ctx.lineTo(0, 51);
+    ctx.fill();
+    ctx.globalAlpha = .82;
+    ctx.fillRect(29, 12, 66, 4);
+  });
+}
+
+function skiShape() {
+  const sections = [
+    [-1.30, .071, .018], [-1.14, .081, 0], [-.43, .071, 0],
+    [.20, .069, 0], [.94, .082, 0], [1.23, .082, .026],
+    [1.43, .060, .100], [1.54, .022, .158], [1.57, .003, .161]
+  ];
+  const positions = [], indices = [], uv = [];
+  for (let i = 0; i < sections.length; i++) {
+    const [z, width, y] = sections[i];
+    positions.push(-width, y, z, width, y, z, -width, y - .033, z, width, y - .033, z);
+    const v = (z + 1.30) / 2.87;
+    uv.push(0,v,1,v,0,v,1,v);
+    if (i) {
+      const a = (i - 1) * 4, b = i * 4;
+      indices.push(a,b,a+1,a+1,b,b+1,a+2,a+3,b+2,a+3,b+3,b+2,
+        a,a+2,b,b,a+2,b+2,a+1,b+1,a+3,a+3,b+1,b+3);
+    }
+  }
+  indices.push(0,1,2,1,3,2,32,34,33,33,34,35);
+  return surface(positions, indices, uv);
+}
+
+const poses = {
+  ready: [1.03, -.07, .05, 0, 0, .13, -.17, .05, -.38, .06],
+  tuck: [.73, -.20, 1.03, 0, 0, .12, -.27, .07, -.39, .11],
+  launch: [1.01, -.04, .49, .06, 0, .15, -.19, -.05, -.37, -.14],
+  glide: [.94, -.13, 1.19, .32, 0, .09, -.22, .02, -.45, .02],
+  prepare: [.93, -.09, .61, .04, .28, .23, -.22, .14, -.34, .27],
+  absorb: [.72, -.13, .64, 0, .38, .22, -.24, .17, -.35, .37],
+  skid: [.68, -.20, .85, .11, .11, .21, -.21, .04, -.30, .29],
+  coast: [1.02, -.08, .12, 0, .14, .11, -.20, .02, -.37, .06]
+};
+
+class AlpineAthlete {
+  constructor(view, root) {
+    this.root = root;
+    this.box = view.boxGeo;
+    this.sphere = new Three.SphereGeometry(1, 20, 14);
+    this.materials = {
+      suit: fabric(colors.blue[0]), trim: fabric(colors.blue[1]),
+      dark: fabric(0x12283e), rubber: fabric(0x1a3548),
+      white: fabric(0xeef5f6, .43), shell: fabric(0xdeeef4, .31),
+      skin: fabric(0xd89970), shade: fabric(0x985445),
+      brass: fabric(0xf0a560, .32, .16), steel: fabric(0x8daab7, .32, .28)
+    };
+    this.torso = new Three.Group();
+    root.add(this.torso);
+    this.buildTorso();
+    this.buildHead();
+    this.buildLimbs();
+    this.current = poses.ready.slice();
+    this.scratch = Array.from({length: 7}, () => new Three.Vector3());
+    this.animationTarget = new Array(poses.ready.length);
+  }
+
+  mesh(parent, geometry, material, x = 0, y = 0, z = 0) {
+    const mesh = new Three.Mesh(geometry, this.materials[material] || material);
+    mesh.position.set(x, y, z);
+    parent.add(mesh);
+    return mesh;
+  }
+
+  block(parent, material, x, y, z, w, h, d) {
+    const mesh = this.mesh(parent, this.box, material, x, y, z);
+    mesh.scale.set(w, h, d);
+    return mesh;
+  }
+
+  oval(parent, material, x, y, z, w, h, d) {
+    const mesh = this.mesh(parent, this.sphere, material, x, y, z);
+    mesh.scale.set(w, h, d);
+    return mesh;
+  }
+
+  buildTorso() {
+    const b = this.torso;
+    this.mesh(b, loft([
+      [-.155,.005,.005],[-.12,.19,.137],[-.026,.24,.155],[.17,.218,.142],
+      [.35,.267,.175],[.50,.301,.166],[.57,.251,.135],[.634,.119,.104],[.65,.004,.004]
+    ]), 'suit');
+    this.mesh(b, loft([[.54,.14,.12],[.60,.146,.116],[.674,.126,.106],[.70,.108,.103]]), 'dark');
+    this.mesh(b, loft([[-.093,.213,.144],[-.054,.238,.155],[-.014,.243,.159],[.024,.24,.158]]), 'dark');
+    const bib = curvedPanel(.425, .396, .053);
+    for (const back of [false, true]) {
+      const number = this.mesh(b, bib, new Three.MeshLambertMaterial({map: bibTexture(back)}),
+        0, .319, back ? -.180 : .180);
+      number.rotation.y = back ? Math.PI : 0;
+    }
+    for (const side of [-1, 1]) {
+      const shoulder = this.oval(b, 'trim', side * .233, .495, .026, .089, .084, .133);
+      shoulder.rotation.z = side * -.42;
+      this.oval(b, 'dark', side * .222, .147, .015, .042, .104, .107);
+    }
+  }
+
+  buildHead() {
+    this.head = new Three.Group();
+    this.head.position.set(0, .64, .025);
+    this.torso.add(this.head);
+    const h = this.head;
+    this.oval(h, 'dark', 0, .069, 0, .139, .126, .119);
+    this.mesh(h, loft([
+      [.091,.026,.059,.078],[.119,.115,.116,.060],[.168,.161,.143,.045],
+      [.245,.190,.163,.021],[.324,.191,.157,.015],[.408,.151,.127,.012],[.454,.004,.004]
+    ]), 'skin');
+    this.oval(h, 'skin', 0, .211, .190, .050, .034, .045);
+    this.oval(h, 'shade', 0, .152, .161, .048, .011, .022);
+    this.mesh(h, loft([
+      [.258,.202,.177,-.012],[.284,.222,.196,-.018],[.369,.226,.206,-.023],
+      [.461,.204,.186,-.024],[.522,.146,.145,-.028],[.548,.072,.083,-.028],[.552,.002,.002,-.028]
+    ], 24), 'shell');
+    this.mesh(h, loft([[.271,.209,.187,-.015],[.290,.225,.201,-.019],[.319,.229,.209,-.021]]), 'dark');
+    for (const side of [-1, 1]) {
+      this.oval(h, 'dark', side * .190, .242, -.025, .055, .105, .104);
+      this.oval(h, 'trim', side * .230, .246, -.026, .017, .057, .056);
+      this.block(h, 'rubber', side * .150, .183, .095, .028, .108, .025).rotation.z = side * -.34;
+      this.block(h, 'brass', side * .177, .273, .133, .060, .035, .044).rotation.y = side * .53;
+    }
+    this.oval(h, 'dark', 0, .280, .168, .207, .104, .079);
+    this.mesh(h, curvedPanel(.367, .135, .033, .19), 'brass', 0, .288, .269);
+    this.mesh(h, curvedPanel(.336, .105, .031, .19), new Three.MeshLambertMaterial({map:lensTexture()}), 0, .291, .275);
+    for (const x of [-.082, -.043, .043, .082]) {
+      this.oval(h, 'dark', x, .505, .105, .013, .006, .039).rotation.x = -.54;
+    }
+    this.oval(h, 'trim', 0, .520, -.096, .028, .020, .091).rotation.x = -.39;
+  }
+
+  buildLimbs() {
+    const linkGeometry = loft([[0,.63,.67],[.09,.91,.92],[.34,1,1],[.74,.87,.93],[1,.62,.67]],12);
+    const boardGeometry = skiShape();
+    const boardMap = paintedTexture(96, 512, (ctx, w, h) => {
+      ctx.fillStyle = '#142d46';
+      ctx.fillRect(0,0,w,h);
+      ctx.fillStyle = '#eb765c';
+      ctx.fillRect(8,0,w-16,h);
+      ctx.fillStyle = '#ffd5a4';
+      for (let y of [63,84,402,423]) {
+        ctx.beginPath();
+        ctx.moveTo(8,y);
+        ctx.lineTo(w-8,y+22);
+        ctx.lineTo(w-8,y+32);
+        ctx.lineTo(8,y+10);
+        ctx.fill();
+      }
+      ctx.save();
+      ctx.translate(55,178);
+      ctx.rotate(Math.PI/2);
+      ctx.fillStyle = '#172d44';
+      ctx.font = '900 24px system-ui';
+      ctx.fillText('ALPINE / 17', 0,0);
+      ctx.restore();
+    });
+    const boardMaterial = new Three.MeshLambertMaterial({map:boardMap});
+    this.limbs = [-1, 1].map(side => {
+      const ski = new Three.Group();
+      this.root.add(ski);
+      this.mesh(ski, boardGeometry, boardMaterial);
+      this.block(ski,'steel',0,.022,.013,.126,.045,.49);
+      this.block(ski,'dark',0,.055,.219,.142,.081,.088);
+      this.block(ski,'dark',0,.055,-.155,.142,.081,.074);
+      this.oval(ski,'rubber',0,.124,.040,.104,.088,.197);
+      this.oval(ski,'dark',0,.193,-.035,.090,.125,.120);
+      for (const z of [-.02,.078,.151]) {
+        this.block(ski,'steel',0,.205-(z+.02)*.19,z,.168,.020,.033);
+        this.block(ski,'brass',side*.069,.219-(z+.02)*.19,z,.028,.017,.035);
+      }
+      const link = (parent, material) => this.mesh(parent,linkGeometry,material);
+      return {
+        side, ski, thigh: link(this.root,'suit'), calf: link(this.root,'suit'),
+        knee: this.oval(this.root,'trim',0,0,0,.112,.108,.100),
+        upper: link(this.torso,'suit'), fore: link(this.torso,'dark'),
+        elbow: this.oval(this.torso,'trim',0,0,0,.075,.074,.076),
+        hand: this.oval(this.torso,'dark',0,0,0,.079,.10,.067),
+        cuff: this.oval(this.torso,'white',0,0,0,.077,.040,.073)
+      };
+    });
+  }
+
+  pose(run, intro, dt, reduced) {
+    const phase = intro ? 'ready' : run.phase;
+    const air = phase === 'flight';
+    const progress = air ? clamp(run.t / flightTime(run)) : 0;
+    const recovery = phase === 'brake' || phase === 'result' || phase === 'between';
+    let target = poses.ready;
+    if (phase === 'inrun') target = run.mark ? poses.launch : poses.tuck;
+    if (air) {
+      if (run.mark && run.land > .25) target = poses.prepare;
+      else {
+        const ease = clamp(progress / .15);
+        target = this.animationTarget;
+        for (let i = 0; i < target.length; i++) target[i] = Three.MathUtils.lerp(poses.launch[i],poses.glide[i],ease);
+      }
+    }
+    if (recovery) {
+      target = poses.coast;
+      if (phase === 'brake') {
+        const source = run.land >= .54 ? poses.absorb : poses.skid;
+        target = this.animationTarget;
+        const rise = clamp((run.t - .24) / .87);
+        for (let i = 0; i < target.length; i++) target[i] = Three.MathUtils.lerp(source[i],poses.coast[i],rise);
+      }
+    }
+    const blend = reduced ? 1 : 1 - Math.exp(-dt * 16);
+    for (let i = 0; i < target.length; i++) this.current[i] += (target[i] - this.current[i]) * blend;
+    const [height, hipZ, pitch, spread, stagger, armOut, elbowY, elbowZ, handY, handZ] = this.current;
+    this.torso.position.set(0,height,hipZ);
+    this.torso.rotation.x = pitch;
+    this.torso.updateMatrix();
+    this.head.rotation.x = -pitch * .71;
+    const [hip, ankle, knee, shoulder, elbow, hand, axis] = this.scratch;
+
+    const connect = (mesh, a, b, width, depth = width) => {
+      axis.subVectors(b,a);
+      mesh.position.copy(a);
+      mesh.scale.set(width,axis.length(),depth);
+      mesh.quaternion.setFromUnitVectors(up,axis.normalize());
+    };
+
+    for (const limb of this.limbs) {
+      const side = limb.side;
+      limb.ski.position.set(side * (.177 + spread * .11),.043,side * stagger);
+      limb.ski.rotation.y = side * spread;
+      limb.ski.updateMatrix();
+      hip.set(side*.143,-.037,0).applyMatrix4(this.torso.matrix);
+      ankle.set(0,.207,-.057).applyMatrix4(limb.ski.matrix);
+      knee.copy(hip).lerp(ankle,.52);
+      knee.z += .115 + pitch * .105;
+      knee.x += side * (.016 + spread * .045);
+      connect(limb.thigh,hip,knee,.123,.122);
+      connect(limb.calf,knee,ankle,.105,.100);
+      limb.knee.position.copy(knee);
+      shoulder.set(side*.267,.486,.006);
+      elbow.set(side*(.27+armOut*.55),.486+elbowY,elbowZ);
+      hand.set(side*(.27+armOut),.486+handY,handZ);
+      connect(limb.upper,shoulder,elbow,.093);
+      connect(limb.fore,elbow,hand,.078);
+      limb.elbow.position.copy(elbow);
+      limb.hand.position.copy(hand);
+      limb.hand.quaternion.copy(limb.fore.quaternion);
+      limb.cuff.position.copy(hand).lerp(elbow,.18);
+      limb.cuff.quaternion.copy(limb.fore.quaternion);
+    }
+  }
+
+  setKit(kit) {
+    if (kit === this.kit) return;
+    this.kit = kit;
+    const [main, trim] = colors[kit] || colors.blue;
+    this.materials.suit.color.setHex(main);
+    this.materials.trim.color.setHex(trim);
+  }
+
+  dispose() {
+    const geometries = new Set(), materials = new Set();
+    this.root.traverse(mesh => {
+      if (!mesh.isMesh) return;
+      if (mesh.geometry !== this.box) geometries.add(mesh.geometry);
+      materials.add(mesh.material);
+    });
+    geometries.forEach(geometry => geometry.dispose());
+    materials.forEach(material => {
+      material.map?.dispose();
+      material.dispose();
+    });
+    this.root.removeFromParent();
+  }
+}
+
 const T=window.THREE;
 const V=(x,y,z)=>new T.Vector3(x,y,z);
 const mix=(a,b,t)=>a+(b-a)*t;
-const kitColors={blue:0x1769a5,rose:0xc83a66,ice:0x42acbe,aurora:0x5e3db5,ember:0xdb5331};
 class AlpineView{
  constructor(el){
   this.el=el;this.s=new T.Scene();this.c=new T.PerspectiveCamera(51,1,.1,280);
@@ -110,7 +492,17 @@ class AlpineView{
  }
  sign(p,x,y,z,w,h,words){let o=new T.Mesh(new T.PlaneGeometry(w,h),new T.MeshBasicMaterial({map:this.label(words),side:T.DoubleSide}));o.rotation.y=Math.PI;o.position.set(x,y,z);p.add(o);return o}
  make(id){
-  if(this.map){this.map.traverse(o=>{if(o.isMesh&&o.geometry!==this.boxGeo&&o.geometry!==this.ballGeo)o.geometry.dispose();if(o.material?.map){o.material.map.dispose();o.material.dispose()}});this.s.remove(this.map)}
+  this.athlete?.dispose();
+  if(this.map){
+   const geometries=new Set();
+   this.map.traverse(o=>{
+    if(o.isMesh&&o.geometry!==this.boxGeo&&o.geometry!==this.ballGeo)geometries.add(o.geometry);
+    if(o.isInstancedMesh)o.dispose();
+    if(o.material?.map){o.material.map.dispose();o.material.dispose()}
+   });
+   geometries.forEach(geometry=>geometry.dispose());
+   this.s.remove(this.map);
+  }
   const p=this.map=new T.Group(),h=HILLS[id];this.s.add(p);this.s.background=new T.Color(h.sky);this.s.fog=new T.FogExp2(h.sky,.0088);
   let seed=12393+id*77;let rand=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296};
   this.box(p,0,-12,37,380,8,315,0xaac8db);
@@ -126,13 +518,38 @@ class AlpineView{
    const land=new T.BufferGeometry();land.setAttribute('position',new T.Float32BufferAttribute(pts,3));land.setIndex(ix);land.computeVertexNormals();this.mesh(p,land,[0xc7e0ee,0xe1d5e8,0x9db2dc][id],0,0,0);
   }
   const pineGeo=new T.ConeGeometry(1,1,7);
+  const pineBatches=[0x28485d,0x3e6173,0x58788a,0xd7eaf5].map((color,i)=>{
+   const batch=new T.InstancedMesh(pineGeo,this.m(color),i===3?219:73);
+   p.add(batch);
+   return batch;
+  });
+  const transform=new T.Object3D();
   for(let i=0;i<73;i++){let side=i%2?-1:1,x=side*(8.4+rand()*27),z=-38+rand()*116,scale=.65+rand()*1.20,y=shoulder(x,z)-.18;
    this.box(p,x,y+.5*scale,z,.25*scale,1.6*scale,.25*scale,0x6a6773);
-   for(let k=0;k<3;k++){let a=this.mesh(p,pineGeo,[0x2b556a,0x42677a,0x5a7d8e][k],x,y+(1.35+k*.7)*scale,z);a.scale.set((1.1-.18*k)*scale,1.8*scale,(1.1-.18*k)*scale);let b=this.mesh(p,pineGeo,0xd7eaf5,x,y+(1.69+k*.7)*scale,z);b.scale.set((.69-.11*k)*scale,1.1*scale,(.69-.11*k)*scale)}
+   transform.rotation.y=i*1.47;
+   for(let k=0;k<3;k++){
+    const branch=(1.10-.18*k)*scale, cap=(.69-.11*k)*scale;
+    transform.position.set(x,y+(1.35+k*.7)*scale,z);
+    transform.scale.set(branch,1.8*scale,branch);
+    transform.updateMatrix();
+    pineBatches[k].setMatrixAt(i,transform.matrix);
+    transform.position.y=y+(1.68+k*.7)*scale;
+    transform.scale.set(cap,1.10*scale,cap);
+    transform.updateMatrix();
+    pineBatches[3].setMatrixAt(i*3+k,transform.matrix);
+   }
   }
+  pineBatches.forEach(batch=>batch.instanceMatrix.needsUpdate=true);
   this.strip(p,-4.05,4.05,-36,67,h.snow,.001);
   this.strip(p,-1.73,1.73,-36,0,id===2?0x9ab9dc:0xc7e0ed,.018);
-  for(let a of [-1,-.52,.52,1])this.strip(p,a-.045,a+.045,-36,0,0x86a9bd,.022);
+  for(let a of [-1,-.52,.52,1])this.strip(p,a-.023,a+.023,-36,0,0x9fb9c9,.022);
+  for(let a of [-.177,.177]){
+   this.strip(p,a-.087,a+.087,-36,0,id===2?0x7898be:0x91afc2,.025);
+   this.strip(p,a-.054,a+.054,-36,0,id===2?0xb2c8e3:0xdceaf0,.028);
+  }
+  for(let a of [-2.93,-2.65,-2.37,2.37,2.65,2.93]){
+   this.strip(p,a-.012,a+.012,2,63,[0xc9dfed,0xdacee1,0xadc1e2][id],.016);
+  }
   for(let side of [-1,1]){
    this.strip(p,side*3.35-.11,side*3.35+.11,-36,64,0x5886a5,.028);
    this.strip(p,side*3.9-.14,side*3.9+.14,-36,64,0xa7bed2,.025);
@@ -149,10 +566,20 @@ class AlpineView{
   this.box(p,0,ground(-36)+3.65,-36,8.9,.23,.28,0x13364e);
   for(let x of [-3.9,3.9]){this.box(p,x,ground(-36)+1.7,-36,.31,3.6,.34,0x194660);this.box(p,x,ground(-36)-4.2,-36,.48,8,.48,0x3a5871)}
   this.sign(p,0,ground(-36)+3.17,-35.8,5.25,1.13,h.name.toUpperCase()).rotation.y=0;
+  this.flags=[];
   for(let side of [-1,1])for(let z of [8,23,39,54]){
    let x=side*5.4,y=ground(z)-.16, clr=side>0?0xff7e70:0x51b0ca;
-   this.box(p,x,y+1.45,z,.10,3.1,.12,0x34546e);this.box(p,x+side*.46,y+2.63,z,.9,.54,.085,clr);
-   this.box(p,x+side*.46,y+2.6,z-.05,.62,.07,.025,0xf1faff);
+   this.box(p,x,y+1.45,z,.10,3.1,.12,0x34546e);
+   this.ball(p,x,y+3.02,z,.084,.083,.084,0xf2c779);
+   const flag=new T.Group();
+   p.add(flag);
+   flag.position.set(x,y+2.66,z);
+   this.box(flag,side*.44,0,0,.88,.49,.041,clr);
+   for(let offset of [-.086,.086]){
+    this.box(flag,side*.44,offset,-.024,.67,.029,.008,0xf4faff);
+    this.box(flag,side*.44,offset,.024,.67,.029,.008,0xf4faff);
+   }
+   this.flags.push(flag);
   }
   for(let side of [-1,1]){
    const x=side*7.7,z=52,y=ground(z)-.36;
@@ -161,58 +588,75 @@ class AlpineView{
     for(let j=0;j<11;j++){let a=x+side*(i*.62-.24),b=z-4.1+j*.8,k=y+i*.40;this.box(p,a,k+.42,b,.36,.58,.34,[0xda684d,0x2b567d,0x768acc,0x216d71,0xeab16e][(i+j+id)%5]);this.ball(p,a,k+.82,b,.19,.22,.19,[0xf1bd9a,0x9b614b,0xe5a887][j%3])}
    }
   }
-  this.shad=this.ball(p,0,0,0,.56,.026,1.17,0x93afc5);
-  this.hero=new T.Group();p.add(this.hero);this.athlete(this.hero);
-  this.flakes=[];const flakeGeo=new T.OctahedronGeometry(.065);for(let i=0;i<36;i++){let f=this.mesh(p,flakeGeo,i%3===0?0xbdf9eb:0xffffff,0,0,0);f.visible=false;this.flakes.push(f)}
+  const shadowCanvas=document.createElement('canvas');
+  shadowCanvas.width=shadowCanvas.height=64;
+  const brush=shadowCanvas.getContext('2d');
+  const gradient=brush.createRadialGradient(32,32,5,32,32,31);
+  gradient.addColorStop(0,'rgba(22,55,82,.57)');
+  gradient.addColorStop(.48,'rgba(22,55,82,.27)');
+  gradient.addColorStop(1,'rgba(22,55,82,0)');
+  brush.fillStyle=gradient;
+  brush.fillRect(0,0,64,64);
+  const shadowGeo=new T.PlaneGeometry(2,2).rotateX(-Math.PI/2);
+  const shadowMaterial=new T.MeshBasicMaterial({map:new T.CanvasTexture(shadowCanvas),transparent:true,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-2});
+  this.shad=new T.Mesh(shadowGeo,shadowMaterial);
+  p.add(this.shad);
+  this.hero=new T.Group();p.add(this.hero);this.athlete=new AlpineAthlete(this,this.hero);
+  const flakeGeo=new T.OctahedronGeometry(.065);
+  this.flakes=new T.InstancedMesh(flakeGeo,this.m(0xeaf9ff),36);
+  this.flakes.frustumCulled=false;
+  this.flakes.visible=false;
+  this.flakes.instanceMatrix.setUsage(T.DynamicDrawUsage);
+  this.flakePose=new T.Object3D();
+  p.add(this.flakes);
   this.lastPhase='';this.id=id;
  }
- athlete(p){
-  let navy=0x172d45, white=0xf4fbff,face=0xe5a979;
-  this.body=new T.Group();p.add(this.body);const b=this.body;
-  this.suit=[];
-  this.suit.push(this.ball(b,0,.82,0,.42,.55,.27,0x1769a5));this.box(b,0,.91,.23,.53,.49,.075,white);
-  this.box(b,0,1.06,.277,.48,.075,.016,0x39bfae);
-  this.box(b,0,.85,.278,.085,.23,.016,navy);this.box(b,.105,.91,.278,.06,.12,.016,navy);
-  this.ball(b,0,1.45,.035,.289,.321,.295,face);this.ball(b,0,1.57,-.01,.33,.30,.327,navy);
-  this.ball(b,0,1.69,-.013,.283,.186,.278,white);
-  this.ball(b,0,1.484,.243,.29,.135,.125,0xffa65f);
-  this.ball(b,0,1.504,.292,.252,.092,.088,0x234364);
-  this.box(b,-.075,1.54,.367,.187,.037,.013,0xa9ebec).rotation.z=.12;
-  this.box(b,0,1.326,.283,.09,.046,.038,0x924d42);
-  this.box(b,0,1.754,-.025,.12,.046,.33,0x28b3a8);
-  this.arms=[];this.legs=[];this.skis=[];
-  for(let side of [-1,1]){
-   let a=new T.Group();a.position.set(side*.39,1.10,0);b.add(a);this.arms.push(a);
-   this.suit.push(this.ball(a,0,-.20,0,.13,.28,.13,0x1769a5));
-   this.ball(a,0,-.49,.035,.105,.19,.108,navy);this.ball(a,0,-.65,.043,.105,.10,.11,white);
-   let l=new T.Group();p.add(l);this.legs.push(l);l.position.set(side*.19,.10,0);
-   this.suit.push(this.ball(l,0,.35,-.018,.15,.37,.158,0x1769a5));this.box(l,0,.116,.055,.23,.19,.34,navy);
-   this.box(l,0,.16,.222,.205,.035,.025,0x97d6d8);
-   let ski=new T.Group();p.add(ski);this.skis.push(ski);ski.position.set(side*.21,.045,0);
-   this.box(ski,0,0,0,.145,.062,2.64,navy);
-   this.box(ski,0,.036,.05,.126,.020,2.44,0xf57962);
-   this.box(ski,0,.047,.65,.105,.019,.35,0xfbf0cb);
-   let tip=this.box(ski,0,.059,1.36,.145,.056,.37,0xf57962);tip.rotation.x=-.21;
-  }
- }
- render(run,kit,mode,fx,reduced){
+ render(run,kit,mode,fx,reduced,dt=1/60){
   if(run.hill!==this.id)this.make(run.hill);
   let r=run, z=r.z, x=r.x, fly=r.phase==='flight', u=fly?clamp(r.t/flightTime(r)):0, intro=mode==='home'||mode==='hills'||mode==='kits'||r.phase==='ready';
   let close=mode==='home'||mode==='hills'||mode==='kits';
   if(intro){z=close?-27:-35;x=0}
   const g=ground(z),slope=Math.atan2(ground(z+.12)-g,.12),air=fly?Math.sin(u*Math.PI)*(2.55+1.05*r.take):0;
-  this.hero.position.set(x,g+.055+air,z);this.hero.rotation.x=-slope+(fly?-.18*Math.sin(u*Math.PI):0);this.hero.rotation.y=close?-1.94:0;
-  this.body.position.set(0,fly?.34:.49,0);const pitch=intro?.12:fly?(r.mark?.55:1.07):r.phase==='inrun'?(r.mark?.64:1.03):r.land>.54?.27:.50;this.body.rotation.x=reduced||!this.lastPhase?pitch:mix(this.body.rotation.x,pitch,.18);
-  this.suit.forEach(m=>m.material=this.m(kitColors[kit]||kitColors.blue));
-  for(let i=0;i<2;i++){let d=i?1:-1;this.skis[i].rotation.y=fly&&!r.mark?d*(.16+.20*Math.sin(Math.PI*u)):0;this.skis[i].position.z=!fly&&r.phase!=='inrun'&&r.land>.54?d*.37:0;this.legs[i].position.z=this.skis[i].position.z;this.legs[i].rotation.x=intro?0:r.phase==='inrun'?-.58:fly?-.57:-.20;this.arms[i].rotation.x=intro?-.15:fly?.79:1.02;this.arms[i].rotation.z=d*(fly?-.24:-.13)}
-  this.shad.position.set(x,g+.027,z);this.shad.rotation.x=-slope;this.shad.scale.x=.48+air*.11;this.shad.scale.z=1.03+air*.12;
+  this.hero.position.set(x,g+.055+air,z);this.hero.rotation.x=-slope+(fly?-.18*Math.sin(u*Math.PI):0);this.hero.rotation.y=close?-1.83:0;
+  this.athlete.pose(run,intro,dt,reduced);
+  this.athlete.setKit(kit);
+  this.shad.position.set(x,g+.043,z);
+  this.shad.rotation.x=-slope;
+  this.shad.scale.set(.46+air*.10,1,1.15+air*.18);
+  this.shad.material.opacity=1/(1+air*.54);
   this.marker.visible=fly||r.phase==='brake';let a=distanceWorld(r)-1.7;const pos=this.marker.geometry.attributes.position;for(let i=0;i<pos.count;i++){let nz=a+Math.floor(i/2)*2/3;pos.setY(i,ground(nz)+.049);pos.setZ(i,nz)}pos.needsUpdate=true;this.marker.frustumCulled=false;
-  this.flakes.forEach((f,i)=>{const k=(i+1)/36,t=fx?.t||0;f.visible=t>0;if(t>0){const age=1-t;f.position.set(fx.x+Math.sin(i*7.3)*age*(1+k)*2,fx.y+.12+Math.sin(i*2.2)**2*Math.sin(Math.PI*age)*1.45,fx.z+Math.cos(i*3.3)*age*3);f.scale.setScalar(t*(.6+k*1.65));f.rotation.set(i,age*5,i*.5)}});
-  let ca=close?V(-5.55,g+3.7,z-3.4):V(x+1.9+(fly?.48*Math.sin(u*Math.PI):0),g+air+4.12,z-5.9);
-  let look=close?V(.05,g+.50,z+.31):V(x,g+air+.20,z+2.15);
-  if(!close&&(r.phase==='result'||r.phase==='between')){ca=V(x-4.4,g+2.72,z+5.4);look=V(x,g+.15,z+.2)}
+  this.drawSnow(r,fx,reduced);
+  this.flags.forEach((flag,i)=>{
+   flag.rotation.y=.14*HILLS[r.hill].wind+(reduced?0:Math.sin(r.t*5+i*.83)*.20);
+  });
+  let ca=close?V(-4.60,g+3.68,z-3.1):V(x+1.9+(fly?.48*Math.sin(u*Math.PI):0),g+air+4.12,z-5.9);
+  let look=close?V(.03,g+.75,z+.17):V(x,g+air+.20,z+2.15);
+  if(!close&&(r.phase==='result'||r.phase==='between')){ca=V(x-4.4,g+2.72,z+5.4);look=V(x,g+.75,z+.2)}
   if(!this.lastPhase||reduced||this.lastPhase==='result'&&r.phase==='ready'||intro&&this.lastPhase!=='ready'){this.cam.copy(ca);this.look.copy(look)}else{this.cam.lerp(ca,.12);this.look.lerp(look,.15)}
   this.lastPhase=r.phase;this.c.position.copy(this.cam);this.c.lookAt(this.look);this.r.render(this.s,this.c);
+ }
+
+ drawSnow(run,fx,reduced){
+  const landing=(fx?.t||0)>0;
+  const sliding=run.phase==='brake'&&run.t<.86;
+  this.flakes.visible=!reduced&&(landing||sliding);
+  if(!this.flakes.visible)return;
+  const pose=this.flakePose;
+  for(let i=0;i<this.flakes.count;i++){
+   const noise=Math.sin(i*7.83);
+   const plume=i<22&&landing;
+   const age=plume?1-fx.t:(run.t*3.1+i*.31)%1;
+   const x=plume?fx.x:run.x;
+   const z=(plume?fx.z:run.z)-age*(plume?2.6:3.3);
+   const height=Math.sin(age*Math.PI)*(.26+Math.abs(noise)*(plume?1.06:.55));
+   pose.position.set(x+noise*(.16+age*(plume?1.44:.69)),ground(z)+.08+height,z);
+   const size=(1-age)*(.45+Math.abs(noise)*1.14);
+   pose.scale.set(size,size*.7,size);
+   pose.rotation.set(i,age*5,i*.5);
+   pose.updateMatrix();
+   this.flakes.setMatrixAt(i,pose.matrix);
+  }
+  this.flakes.instanceMatrix.needsUpdate=true;
  }
 }
 
@@ -325,7 +769,7 @@ function controls(){
  const title=fly?'LAND':'JUMP';b.querySelector('span').textContent=title;b.setAttribute('aria-label',fly?'Prepare landing':'Take off');
  $('step').textContent=fly?'02 / LANDING':'01 / TAKEOFF';
  $('hint').textContent=run.phase==='brake'?'Skis on snow':run.mark?(fly?'Landing set':'Takeoff set'):hot?'Tap now!':fly?'Watch for the mint zone':'Watch the stripe';
- $('needle').style.left=(clamp(run.t/duration)*100)+'%';
+ $('needle').style.left=(run.phase==='brake'?100:clamp(run.t/duration)*100)+'%';
  $('zone').style.left=(clamp((target-width)/duration)*100)+'%';
  $('zone').style.right=(100-clamp((target+width)/duration)*100)+'%';
  $('jump').textContent='JUMP '+(run.attempt+1)+' / 2';
@@ -345,8 +789,9 @@ function frame(ms){
   controls()
  }
  if(!paused&&fx)fx.t=Math.max(0,fx.t-dt*1.24);
- view.render(run,pf.kit,mode,fx,reduced.matches);
+ view.render(run,pf.kit,mode,fx,reduced.matches,paused?0:dt);
 }
 try{view=new AlpineView($('stage'));view.render(run,pf.kit,mode,null,reduced.matches);panel();host.poll();requestAnimationFrame(frame)}
 catch(e){console.error(e);$('panel').innerHTML='<small>Alpine Air</small><h2>3D unavailable</h2><p>This game needs WebGL. Try opening it in Safari, Chrome or Edge with hardware acceleration enabled.</p>'}
+
 })();</script></body></html>

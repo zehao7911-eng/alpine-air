@@ -80,7 +80,7 @@ function controls(){
  const title=fly?'LAND':'JUMP';b.querySelector('span').textContent=title;b.setAttribute('aria-label',fly?'Prepare landing':'Take off');
  $('step').textContent=fly?'02 / LANDING':'01 / TAKEOFF';
  $('hint').textContent=run.phase==='brake'?'Skis on snow':run.mark?(fly?'Landing set':'Takeoff set'):hot?'Tap now!':fly?'Watch for the mint zone':'Watch the stripe';
- $('needle').style.left=(clamp(run.t/duration)*100)+'%';
+ $('needle').style.left=(run.phase==='brake'?100:clamp(run.t/duration)*100)+'%';
  $('zone').style.left=(clamp((target-width)/duration)*100)+'%';
  $('zone').style.right=(100-clamp((target+width)/duration)*100)+'%';
  $('jump').textContent='JUMP '+(run.attempt+1)+' / 2';
@@ -100,7 +100,8 @@ function frame(ms){
   controls()
  }
  if(!paused&&fx)fx.t=Math.max(0,fx.t-dt*1.24);
- view.render(run,pf.kit,mode,fx,reduced.matches);
+ view.render(run,pf.kit,mode,fx,reduced.matches,paused?0:dt);
 }
 try{view=new AlpineView($('stage'));view.render(run,pf.kit,mode,null,reduced.matches);panel();host.poll();requestAnimationFrame(frame)}
 catch(e){console.error(e);$('panel').innerHTML='<small>Alpine Air</small><h2>3D unavailable</h2><p>This game needs WebGL. Try opening it in Safari, Chrome or Edge with hardware acceleration enabled.</p>'}
+
