@@ -206,8 +206,8 @@ class AlpineView{
   this.shad.position.set(x,g+.027,z);this.shad.rotation.x=-slope;this.shad.scale.x=.48+air*.11;this.shad.scale.z=1.03+air*.12;
   this.marker.visible=fly||r.phase==='brake';let a=distanceWorld(r)-1.7;const pos=this.marker.geometry.attributes.position;for(let i=0;i<pos.count;i++){let nz=a+Math.floor(i/2)*2/3;pos.setY(i,ground(nz)+.049);pos.setZ(i,nz)}pos.needsUpdate=true;this.marker.frustumCulled=false;
   this.flakes.forEach((f,i)=>{const k=(i+1)/36,t=fx?.t||0;f.visible=t>0;if(t>0){const age=1-t;f.position.set(fx.x+Math.sin(i*7.3)*age*(1+k)*2,fx.y+.12+Math.sin(i*2.2)**2*Math.sin(Math.PI*age)*1.45,fx.z+Math.cos(i*3.3)*age*3);f.scale.setScalar(t*(.6+k*1.65));f.rotation.set(i,age*5,i*.5)}});
-  let ca=close?V(-5.55,g+3.7,z-3.4):intro?V(3.25,g+3.05,z-5.5):V(3.3+(fly?1.05*Math.sin(u*Math.PI):0),g+air+3.05,z-5.45);
-  let look=close?V(.05,g+.50,z+.31):V(x*.50,g+air-.22,z+5.7);
+  let ca=close?V(-5.55,g+3.7,z-3.4):V(x+1.9+(fly?.48*Math.sin(u*Math.PI):0),g+air+4.12,z-5.9);
+  let look=close?V(.05,g+.50,z+.31):V(x,g+air+.20,z+2.15);
   if(!close&&(r.phase==='result'||r.phase==='between')){ca=V(x-4.4,g+2.72,z+5.4);look=V(x,g+.15,z+.2)}
   if(!this.lastPhase||reduced||this.lastPhase==='result'&&r.phase==='ready'||intro&&this.lastPhase!=='ready'){this.cam.copy(ca);this.look.copy(look)}else{this.cam.lerp(ca,.12);this.look.lerp(look,.15)}
   this.lastPhase=r.phase;this.c.position.copy(this.cam);this.c.lookAt(this.look);this.r.render(this.s,this.c);
